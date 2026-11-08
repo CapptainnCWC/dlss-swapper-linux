@@ -36,8 +36,41 @@ def _strings(items: list[str]) -> Gtk.StringList:
     return Gtk.StringList.new(items)
 
 
+def _popover_factory() -> Gtk.SignalListItemFactory:
+    """Dropdown list items that show the full text (wrap instead of ellipsizing)."""
+    f = Gtk.SignalListItemFactory()
+
+    def setup(_f, item):
+        lb = Gtk.Label(xalign=0, wrap=True, max_width_chars=48, width_chars=1)
+        item.set_child(lb)
+
+    def bind(_f, item):
+        item.get_child().set_label(item.get_item().get_string())
+
+    f.connect("setup", setup)
+    f.connect("bind", bind)
+    return f
+
+
+def _value_factory(ellipsize: int = 3, max_chars: int = 26) -> Gtk.SignalListItemFactory:
+    """Selected value shown in the row, with a width cap (1 = ellipsize start, 3 = end)."""
+    f = Gtk.SignalListItemFactory()
+
+    def setup(_f, item):
+        item.set_child(Gtk.Label(xalign=1, ellipsize=ellipsize, max_width_chars=max_chars))
+
+    def bind(_f, item):
+        item.get_child().set_label(item.get_item().get_string())
+
+    f.connect("setup", setup)
+    f.connect("bind", bind)
+    return f
+
+
 def _combo(title: str, items: list[str], selected: int = 0, subtitle: str = "") -> Adw.ComboRow:
     row = Adw.ComboRow(title=title, model=_strings(items))
+    row.set_expression(Gtk.PropertyExpression.new(Gtk.StringObject, None, "string"))
+    row.set_list_factory(_popover_factory())
     if subtitle:
         row.set_subtitle(subtitle)
     if items:
@@ -382,6 +415,7 @@ class Window(Adw.ApplicationWindow):
                 sub += f" · оригинал {d.original_version}"
             row = _combo(d.label, [r.display for r in rlist] or ["нет данных"], subtitle=sub)
             row.set_tooltip_text(str(d.path.relative_to(g.path)))
+            row.set_factory(_value_factory(ellipsize=3, max_chars=16))
             if d.swapped:
                 b = Gtk.Button(icon_name="edit-undo-symbolic", valign=Gtk.Align.CENTER,
                                tooltip_text="Вернуть оригинал")
@@ -407,7 +441,7 @@ class Window(Adw.ApplicationWindow):
         if inst:
             k, v = next(iter(inst.items()))
             st = Adw.ActionRow(title=f"Установлен {v['version']}",
-                               subtitle=f"{k} · {v['proxy']} · {optiscaler.FG_MODES.get(v['fg_mode'], '')}")
+                               subtitle=f"{k} · {v['proxy']} · {optiscaler.FG_SHORT.get(v['fg_mode'], '')}")
             st.add_prefix(Gtk.Image(icon_name="emblem-ok-symbolic"))
             b = Gtk.Button(icon_name="document-edit-symbolic", valign=Gtk.Align.CENTER,
                            tooltip_text="Открыть OptiScaler.ini")
@@ -423,9 +457,18 @@ class Window(Adw.ApplicationWindow):
         mode = "optifg" if has_fg else ("upscaler" if has_dlss else "none")
         if self.gpu.native_dlss_fg:
             mode = "none"
-        self.w_fg = _combo("Frame Generation", [optiscaler.FG_MODES[m] for m in self._modes],
-                           self._modes.index(mode),
-                           "" if has_fg else "В игре нет DLSS FG — подойдёт «FG из апскейлера»")
+        self.w_fg = _combo("Frame Generation", [optiscaler.FG_SHORT[m] for m in self._modes],
+                           self._modes.index(mode))
+
+        def fg_hint(*_):
+            m = self._modes[self.w_fg.get_selected()]
+            hint = optiscaler.FG_HINTS[m]
+            if not has_fg and m in ("optifg", "nukems", "xefg"):
+                hint = "В игре нет DLSS FG — выберите «Из апскейлера»"
+            self.w_fg.set_subtitle(hint)
+
+        self.w_fg.connect("notify::selected", fg_hint)
+        fg_hint()
         grp.add(self.w_fg)
         self.w_up = _combo("Апскейлер", [UPSCALER_NAMES[u] for u in optiscaler.UPSCALERS],
                            0 if self.gpu.has_dlss else 1)
@@ -438,6 +481,8 @@ class Window(Adw.ApplicationWindow):
         adv.add_row(self.w_bundle)
         self.w_target = _combo("Папка с exe", [str(p.relative_to(g.path)) if p != g.path else "."
                                                for p in self._cands])
+        self.w_target.set_factory(_value_factory(ellipsize=1, max_chars=18))  # "…/Binaries/Win64"
+        self.w_target.set_tooltip_text(str(self._cands[0]))
         adv.add_row(self.w_target)
         self.w_proxy = _combo("Имя прокси-DLL", optiscaler.PROXY_NAMES,
                               subtitle="Если игра не стартует с dxgi.dll — попробуйте winmm.dll")

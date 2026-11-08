@@ -38,7 +38,21 @@ FG_MODES = {
     "xefg": "DLSS FG → XeSS FG",
     "upscaler": "FG из апскейлера (игры без DLSS FG, нужен HUDFix)",
 }
-UPSCALERS = ["dlss", "fsr31", "xess", "fsr22", "auto"]
+FG_SHORT = {
+    "none": "Выключено",
+    "optifg": "FSR FG (OptiFG)",
+    "nukems": "FSR3 FG (Nukem)",
+    "xefg": "XeSS FG",
+    "upscaler": "Из апскейлера",
+}
+FG_HINTS = {
+    "none": "Только апскейлер, без генерации кадров",
+    "optifg": "DLSS FG игры → FSR FG. Рекомендуется",
+    "nukems": "DLSS FG игры → dlssg-to-fsr3",
+    "xefg": "DLSS FG игры → XeSS FG",
+    "upscaler": "Для игр без DLSS FG, с HUDFix",
+}
+UPSCALERS =["dlss", "fsr31", "xess", "fsr22", "auto"]
 
 
 # ---------------------------------------------------------------- bundles
