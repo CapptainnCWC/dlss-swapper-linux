@@ -4,6 +4,7 @@
 
 - Меняет версии **DLSS**, **DLSS Frame Generation**, **DLSS Ray Reconstruction**, **FSR 3.1** и **XeSS** в играх. Оригиналы сохраняются рядом как `*.dlsss`.
 - Ставит **OptiScaler** и **разблокирует DLSS Frame Generation на картах без RTX 40** (RTX 20/30, AMD, Intel): игра показывает переключатель DLSS FG, а кадры генерирует FSR FG (OptiFG), Nukem `dlssg-to-fsr3` или XeSS FG.
+- **Нативный DLSS Frame Generation на RTX 20/30** через [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86): настоящий DLSS-G от NVIDIA (2X–6X), а не подмена на FSR. Работает в играх, где DLSS FG уже есть.
 - Сам прописывает **параметры запуска Steam** (`WINEDLLOVERRIDES`, переменные DXVK-NVAPI), так что игра запускается из Steam как обычно.
 - Находит игры Steam (обычный, Flatpak, Snap), все библиотеки и **сторонние игры, добавленные в Steam** (например, установленные вне Steam), плюс любые папки, которые вы добавите вручную.
 - Кнопка обновления: приложение проверяет релизы на GitHub и обновляется само.
@@ -49,6 +50,15 @@ git clone https://github.com/CapptainnCWC/dlss-swapper-linux && cd dlss-swapper-
 
 > ⚠ Не используйте OptiScaler и подмену DLL в онлайн-играх с античитом: это может закончиться баном. Приложение предупреждает, если находит EAC/BattlEye.
 
+### Нативный DLSS FG (dlssg_for_sm86)
+Карточка **DLSS Frame Generation** скачивает последний релиз [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86) (MIT), проверяет SHA-256 каждого файла по его `manifest.json` и кладёт рядом с exe игры `version.dll`, `dlssg_sm86.ini` и папку `dlssg_sm86\`. В параметры запуска добавляется `WINEDLLOVERRIDES=version=n,b PROTON_ENABLE_NVAPI=1`.
+
+- Нужна игра со встроенным DLSS FG (`sl.dlss_g.dll` / `nvngx_dlssg.dll`) и драйвер NVIDIA R580+.
+- Мод сам подменяет архитектуру GPU только для Streamline. **Не добавляйте `DXVK_NVAPI_GPU_ARCH`** вместе с ним: по данным автора, глобальная подмена вешает видеокарту.
+- Не включайте одновременно FG в OptiScaler.
+- Лог мода: `<папка exe>/dlssg_sm86/logs/dlssg_sm86.log`. Если переключатель FG не появился, выберите следующий прокси: `winmm.dll`, `dbghelp.dll`, `dinput8.dll`…
+- Работу под Proton автор не заявляет. Проверяйте по логу.
+
 ## CLI
 
 ```bash
@@ -61,6 +71,8 @@ dlss-swapper-linux restore "Cyberpunk"        # вернуть оригинал�
 dlss-swapper-linux opti-install "Cyberpunk" --fg optifg --preset 11
 dlss-swapper-linux opti-install "Game" --fg upscaler --proxy winmm.dll
 dlss-swapper-linux opti-remove "Cyberpunk"
+dlss-swapper-linux dlssg-install "Cyberpunk" --frames 2x --verbose   # нативный DLSS FG
+dlss-swapper-linux dlssg-remove "Cyberpunk"
 dlss-swapper-linux opti-fetch ~/Downloads/Optiscaler_0.9.4.7z   # свой архив OptiScaler
 dlss-swapper-linux --dir "/games/MyGame" show "/games/MyGame"   # игра вне Steam
 ```
@@ -77,6 +89,7 @@ dlss-swapper-linux --dir "/games/MyGame" show "/games/MyGame"   # игра вн�
 
 - [DLSS Swapper](https://github.com/beeradmoore/dlss-swapper): манифест и зеркало DLL
 - [OptiScaler](https://github.com/optiscaler/OptiScaler)
+- [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86) (sdli1995)
 - [dlssg-to-fsr3](https://github.com/Nukem9/dlssg-to-fsr3) (Nukem9)
 - [fakenvapi](https://github.com/optiscaler/fakenvapi), [DXVK-NVAPI](https://github.com/jp7677/dxvk-nvapi)
 

@@ -5,7 +5,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import core, gpu, optiscaler, steam, swapper
+from . import core, dlssg_sm86, gpu, optiscaler, steam, swapper
 from .library import DLL_TYPES, Library
 
 
@@ -63,7 +63,7 @@ def cmd_show(a) -> None:
     for d in swapper.scan(g.path):
         rel = d.path.relative_to(g.path)
         tag = " [заменён, оригинал " + str(d.original_version) + "]" if d.swapped else ""
-        tag += " [OptiScaler]" if d.owned_by_optiscaler else ""
+        tag += " [мод]" if d.owned_by_optiscaler else ""
         print(f"  {d.label:<26} {d.version or '?':<14} {rel}{tag}")
     ac = swapper.anti_cheat(g.path)
     if ac:
@@ -190,6 +190,61 @@ def cmd_opti_remove(a) -> None:
             print(f"  ⚠ {lu.error}")
 
 
+def cmd_dlssg_fetch(a) -> None:
+    b = dlssg_sm86.import_bundle(Path(a.source)) if a.source else dlssg_sm86.download_latest(_progress)
+    print(f"dlssg_for_sm86 {b.version}: {b.path}")
+
+
+def _dlssg_bundle(a) -> dlssg_sm86.Bundle:
+    bs = dlssg_sm86.local_bundles()
+    if a.bundle:
+        for b in bs:
+            if b.version == a.bundle:
+                return b
+        return dlssg_sm86.import_bundle(Path(a.bundle))
+    if bs:
+        return bs[0]
+    print("Скачиваю dlssg_for_sm86…")
+    return dlssg_sm86.download_latest(_progress)
+
+
+def cmd_dlssg_install(a) -> None:
+    g = _find_game(a.game, a.dir)
+    info = gpu.detect()
+    if not info.is_nvidia:
+        sys.exit("dlssg_for_sm86 работает только на видеокартах NVIDIA RTX.")
+    target = Path(a.target) if a.target else (swapper.exe_candidates(g.path) or [g.path])[0]
+    if not target.is_absolute():
+        target = g.path / target
+    b = _dlssg_bundle(a)
+    frames = {"2x": 1, "3x": 2, "4x": 3, "6x": 5}[a.frames.lower()]
+    opts = dlssg_sm86.Options(proxy=a.proxy, engine=a.engine, max_frames=frames, preset=a.preset,
+                              super_resolution=a.sr, verbose_log=a.verbose)
+    res = dlssg_sm86.install(g.path, target, b, opts)
+    print(f"dlssg_for_sm86 {b.version} установлен в {target} ({len(res.placed)} файлов)")
+    for w in res.warnings:
+        print(f"  ⚠ {w}")
+    rel = str(target.relative_to(g.path)) if target != g.path else "."
+    lu = core.apply_dlssg_launch_options(g, rel, opts, write=not a.no_launch)
+    print(f"\nПараметры запуска Steam:\n  {lu.new}")
+    if lu.written:
+        print("  ✓ записаны в конфиг Steam")
+    if lu.error:
+        print(f"  ⚠ {lu.error}")
+    print(f"\nЛог мода: {dlssg_sm86.log_path(g.path, rel)}")
+    print("В игре включите DLSS Frame Generation.")
+
+
+def cmd_dlssg_remove(a) -> None:
+    g = _find_game(a.game, a.dir)
+    lu = core.remove_dlssg(g, None, write=not a.no_launch)
+    print("dlssg_for_sm86 удалён.")
+    if lu:
+        print(f"Параметры запуска: {lu.new or '(пусто)'}" + (" ✓" if lu.written else ""))
+        if lu.error:
+            print(f"  ⚠ {lu.error}")
+
+
 def cmd_launch(a) -> None:
     g = _find_game(a.game, a.dir)
     if a.set is None:
@@ -264,6 +319,29 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("game")
     s.add_argument("--no-launch", action="store_true")
     s.set_defaults(fn=cmd_opti_remove)
+
+    s = sub.add_parser("dlssg-fetch", help="скачать/импортировать dlssg_for_sm86")
+    s.add_argument("source", nargs="?", help="свой .zip или папка (иначе — последний релиз)")
+    s.set_defaults(fn=cmd_dlssg_fetch)
+
+    s = sub.add_parser("dlssg-install", help="нативный DLSS FG на RTX 20/30 (dlssg_for_sm86)")
+    s.add_argument("game")
+    s.add_argument("--frames", default="2x", choices=["2x", "3x", "4x", "6x"])
+    s.add_argument("--engine", default="DLSS", choices=list(dlssg_sm86.ENGINES))
+    s.add_argument("--preset", default="A", choices=list(dlssg_sm86.PRESETS))
+    s.add_argument("--sr", default="Off", choices=list(dlssg_sm86.SR_MODES),
+                   help="INT8-ускорение DLSS SR на RTX 30/20")
+    s.add_argument("--proxy", default="version.dll", choices=dlssg_sm86.PROXIES)
+    s.add_argument("--target")
+    s.add_argument("--bundle", help="версия или путь к архиву/папке")
+    s.add_argument("--verbose", action="store_true", help="подробный лог (Level=2)")
+    s.add_argument("--no-launch", action="store_true")
+    s.set_defaults(fn=cmd_dlssg_install)
+
+    s = sub.add_parser("dlssg-remove", help="удалить dlssg_for_sm86")
+    s.add_argument("game")
+    s.add_argument("--no-launch", action="store_true")
+    s.set_defaults(fn=cmd_dlssg_remove)
 
     s = sub.add_parser("launch-options", help="показать/задать параметры запуска Steam")
     s.add_argument("game")

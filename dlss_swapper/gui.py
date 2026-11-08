@@ -13,7 +13,7 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import __version__, core, gpu, optiscaler, steam, swapper, updater  # noqa: E402
+from . import __version__, core, dlssg_sm86, gpu, optiscaler, steam, swapper, updater  # noqa: E402
 from .library import DLL_TYPES, Library  # noqa: E402
 
 APP_ID = "io.github.capptainncwc.DlssSwapperLinux"
@@ -295,7 +295,8 @@ class Window(Adw.ApplicationWindow):
         self.run_bg(fn, done, "Поиск игр…")
 
     def _has_libs(self, g) -> bool:
-        return bool(self.scan_cache.get(g.key)) or bool(optiscaler.installed(g.path))
+        return (bool(self.scan_cache.get(g.key)) or bool(optiscaler.installed(g.path))
+                or bool(dlssg_sm86.installed(g.path)))
 
     def _game_row(self, g: steam.Game) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
@@ -318,6 +319,8 @@ class Window(Adw.ApplicationWindow):
             chips.append(_chip("XeSS"))
         if optiscaler.installed(g.path):
             chips.append(_chip("Opti", "accent"))
+        if dlssg_sm86.installed(g.path):
+            chips.append(_chip("DLSS-G", "accent"))
         if not chips.get_first_child():
             chips.append(_chip(SOURCE_NAMES[g.source]))
         box.append(chips)
@@ -428,6 +431,9 @@ class Window(Adw.ApplicationWindow):
             row.add_suffix(b)
             grp.add(row)
         page.add(grp)
+
+        if self.gpu.is_nvidia:
+            page.add(self._dlssg_group(g, cands))
 
         # ---- OptiScaler
         inst = optiscaler.installed(g.path)
@@ -604,6 +610,136 @@ class Window(Adw.ApplicationWindow):
                        f"\n\nВерните параметры запуска вручную (скопировано):\n{lu.new or '(пусто)'}")
         else:
             self.toast("OptiScaler удалён")
+        self.show_game()
+        self._refresh_row(g)
+
+    # ============================================================ native DLSS FG
+    def _dlssg_group(self, g, cands) -> Adw.PreferencesGroup:
+        inst = dlssg_sm86.installed(g.path)
+        has_fg = dlssg_sm86.game_has_dlssg(g.path) if not inst else True
+        if self.gpu.native_dlss_fg:
+            desc = "У вас RTX 40/50 — DLSS FG и так доступен. Мод даёт до 6X и INT8-ядра"
+        else:
+            desc = "Настоящий DLSS-G от NVIDIA на RTX 20/30 — проект dlssg_for_sm86"
+        grp = Adw.PreferencesGroup(title="DLSS Frame Generation", description=desc)
+        link = Gtk.LinkButton(uri=dlssg_sm86.PROJECT_URL, label="Проект", valign=Gtk.Align.CENTER)
+        grp.set_header_suffix(link)
+        if not has_fg:
+            w = Adw.ActionRow(title="В игре нет DLSS FG",
+                              subtitle="Мод включает только встроенный DLSS-G. Для этой игры "
+                                       "используйте OptiScaler «Из апскейлера»")
+            w.add_prefix(Gtk.Image(icon_name="dialog-information-symbolic"))
+            grp.add(w)
+        if inst:
+            k, v = next(iter(inst.items()))
+            st = Adw.ActionRow(title=f"Установлен {v['version']}",
+                               subtitle=f"{k} · {v['proxy']} · {dlssg_sm86.FRAMES.get(v['max_frames'], '')}")
+            st.add_prefix(Gtk.Image(icon_name="emblem-ok-symbolic"))
+            for icon, tip, path in (("text-x-generic-symbolic", "Открыть лог", dlssg_sm86.log_path(g.path, k)),
+                                    ("document-edit-symbolic", "Открыть dlssg_sm86.ini",
+                                     g.path / k / "dlssg_sm86.ini")):
+                b = Gtk.Button(icon_name=icon, valign=Gtk.Align.CENTER, tooltip_text=tip)
+                b.add_css_class("flat")
+                b.connect("clicked", lambda _b, p=path: self._open(p) if p.exists()
+                          else self.toast("Лог появится после запуска игры"))
+                st.add_suffix(b)
+            grp.add(st)
+
+        self._dg_frames = list(dlssg_sm86.FRAMES)
+        self.dg_frames = _combo("Кадров генерировать", list(dlssg_sm86.FRAMES.values()), 0,
+                                "Игра может выбрать меньше в своём меню")
+        grp.add(self.dg_frames)
+        self._dg_engines = list(dlssg_sm86.ENGINES)
+        self.dg_engine = _combo("Движок", list(dlssg_sm86.ENGINES.values()))
+        grp.add(self.dg_engine)
+        self._dg_presets = list(dlssg_sm86.PRESETS)
+        self.dg_preset = _combo("Пресет", list(dlssg_sm86.PRESETS.values()))
+        grp.add(self.dg_preset)
+
+        adv = Adw.ExpanderRow(title="Дополнительно")
+        self._dg_bundles = dlssg_sm86.local_bundles()
+        self.dg_bundle = _combo("Версия мода", [b.version for b in self._dg_bundles] + ["Последняя с GitHub"])
+        adv.add_row(self.dg_bundle)
+        self._dg_cands = cands or [g.path]
+        self.dg_target = _combo("Папка с exe", [str(p.relative_to(g.path)) if p != g.path else "."
+                                                for p in self._dg_cands])
+        self.dg_target.set_factory(_value_factory(ellipsize=1, max_chars=18))
+        adv.add_row(self.dg_target)
+        self.dg_proxy = _combo("Имя прокси-DLL", dlssg_sm86.PROXIES,
+                               subtitle="Если мод не загрузился — следующее по списку")
+        adv.add_row(self.dg_proxy)
+        self._dg_sr = list(dlssg_sm86.SR_MODES)
+        self.dg_sr = _combo("Ускорение DLSS SR", list(dlssg_sm86.SR_MODES.values()),
+                            subtitle="INT8-ядра для пресетов L/M, +180 МБ")
+        adv.add_row(self.dg_sr)
+        self.dg_verbose = _switch("Подробный лог", True, "Нужен для диагностики первого запуска")
+        adv.add_row(self.dg_verbose)
+        self.dg_writelaunch = _switch("Прописать параметры запуска", g.source != "folder",
+                                      "Steam должен быть закрыт", g.source != "folder")
+        adv.add_row(self.dg_writelaunch)
+        grp.add(adv)
+
+        bb = Gtk.Box(spacing=8, halign=Gtk.Align.END, margin_top=12)
+        if inst:
+            b = Gtk.Button(label="Удалить")
+            b.add_css_class("destructive-action")
+            b.add_css_class("pill")
+            b.connect("clicked", self.on_remove_dlssg)
+            bb.append(b)
+        b = Gtk.Button(label="Переустановить" if inst else "Включить DLSS FG")
+        b.add_css_class("suggested-action")
+        b.add_css_class("pill")
+        b.connect("clicked", self.on_install_dlssg)
+        bb.append(b)
+        grp.add(bb)
+        return grp
+
+    def on_install_dlssg(self, _b) -> None:
+        g = self.current
+        opts = dlssg_sm86.Options(
+            proxy=dlssg_sm86.PROXIES[self.dg_proxy.get_selected()],
+            engine=self._dg_engines[self.dg_engine.get_selected()],
+            max_frames=self._dg_frames[self.dg_frames.get_selected()],
+            preset=self._dg_presets[self.dg_preset.get_selected()],
+            super_resolution=self._dg_sr[self.dg_sr.get_selected()],
+            verbose_log=self.dg_verbose.get_active())
+        target = self._dg_cands[self.dg_target.get_selected()]
+        bi = self.dg_bundle.get_selected()
+        write = self.dg_writelaunch.get_active()
+
+        def fn():
+            bundle = (self._dg_bundles[bi] if bi < len(self._dg_bundles)
+                      else dlssg_sm86.download_latest(self.progress_cb))
+            res = dlssg_sm86.install(g.path, target, bundle, opts)
+            rel = str(target.relative_to(g.path)) if target != g.path else "."
+            return bundle, res, core.apply_dlssg_launch_options(g, rel, opts, write=write), rel
+
+        def done(r):
+            bundle, res, lu, rel = r
+            msg = [f"Файлов: {len(res.placed)}"] + [f"⚠ {w}" for w in res.warnings]
+            msg.append(f"\nПараметры запуска:\n{lu.new}")
+            if lu.written:
+                msg.append("✓ Записаны в Steam")
+            else:
+                self._copy(lu.new)
+                msg.append(("⚠ " + lu.error + "\n" if lu.error else "") + "Строка скопирована в буфер обмена")
+            msg.append("\nВ игре включите DLSS Frame Generation. "
+                       "Если переключатель не появился — пришлите лог мода.")
+            self.alert(f"dlssg_for_sm86 {bundle.version} установлен", "\n".join(msg))
+            self.show_game()
+            self._refresh_row(g)
+
+        self.run_bg(fn, done, "Установка DLSS FG…")
+
+    def on_remove_dlssg(self, _b) -> None:
+        g = self.current
+        lu = core.remove_dlssg(g, None, write=self.dg_writelaunch.get_active())
+        if lu and not lu.written and lu.new != lu.old:
+            self._copy(lu.new)
+            self.alert("DLSS FG удалён", (lu.error or "") +
+                       f"\n\nВерните параметры запуска вручную (скопировано):\n{lu.new or '(пусто)'}")
+        else:
+            self.toast("dlssg_for_sm86 удалён")
         self.show_game()
         self._refresh_row(g)
 

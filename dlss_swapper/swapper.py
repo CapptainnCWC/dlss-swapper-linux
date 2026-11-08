@@ -46,7 +46,7 @@ def load_state(game_dir: Path) -> dict:
 
 def save_state(game_dir: Path, state: dict) -> None:
     f = Path(game_dir) / STATE_FILE
-    if not state.get("swaps") and not state.get("optiscaler"):
+    if not any(state.values()):
         f.unlink(missing_ok=True)
         return
     tmp = f.with_suffix(".tmp")
@@ -60,8 +60,9 @@ def scan(game_dir: Path) -> list[FoundDll]:
     state = load_state(game_dir)
     swaps = state.get("swaps", {})
     opti_files = set()
-    for inst in state.get("optiscaler", {}).values():
-        opti_files.update(inst.get("placed", []))
+    for key in ("optiscaler", "dlssg_sm86"):
+        for inst in state.get(key, {}).values():
+            opti_files.update(inst.get("placed", []))
     found = []
     for root, dirs, files in os.walk(game_dir):
         dirs[:] = [d for d in dirs if not d.startswith(".") and d.lower() not in ("__pycache__",)]
