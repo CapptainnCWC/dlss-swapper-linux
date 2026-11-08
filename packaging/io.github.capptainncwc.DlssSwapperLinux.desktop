@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=DLSS Swapper
+GenericName=DLSS / FSR / XeSS swapper
+Comment=Swap DLSS, FSR and XeSS versions and install OptiScaler for Steam Proton games
+Comment[ru]=Замена версий DLSS, FSR, XeSS и установка OptiScaler для игр Steam Proton
+Exec=dlss-swapper-linux
+Icon=io.github.capptainncwc.DlssSwapperLinux
+Terminal=false
+Categories=Game;
+Keywords=dlss;fsr;xess;optiscaler;proton;steam;frame generation;
+StartupNotify=true
