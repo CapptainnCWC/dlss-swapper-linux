@@ -270,10 +270,7 @@ def uninstall(game_dir: Path, rel_target: str | None = None) -> list[dict]:
         for rel, bak in inst.get("backups", {}).items():
             if (game_dir / bak).exists():
                 os.replace(game_dir / bak, game_dir / rel)
-        mod_dir = game_dir / k / "dlssg_sm86"
-        logs = mod_dir / "logs"
-        if logs.is_dir():
-            shutil.rmtree(logs, ignore_errors=True)
+        mod_dir = game_dir / k / "dlssg_sm86"  # logs/ is kept for diagnostics
         for root, dirs, files in os.walk(mod_dir, topdown=False):
             if not os.listdir(root):
                 os.rmdir(root)

@@ -359,8 +359,7 @@ def uninstall(game_dir: Path, rel_target: str | None = None) -> list[dict]:
             b = game_dir / bak
             if b.exists():
                 os.replace(b, game_dir / rel)
-        for log in LOG_FILES:
-            (target / log).unlink(missing_ok=True)
+        # logs (OptiScaler.log, fakenvapi.log, dlssg_to_fsr3.log) are kept for diagnostics
         for d in ("D3D12_Optiscaler", "Licenses", "DlssOverrides"):
             p = target / d
             if p.is_dir() and not any(p.iterdir()):
