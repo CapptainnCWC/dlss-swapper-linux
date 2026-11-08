@@ -493,9 +493,12 @@ class Window(Adw.ApplicationWindow):
         self.w_proxy = _combo("Имя прокси-DLL", optiscaler.PROXY_NAMES,
                               subtitle="Если игра не стартует с dxgi.dll — попробуйте winmm.dll")
         adv.add_row(self.w_proxy)
-        self.w_spoof = _switch("Показывать игре RTX 40", self.gpu.is_nvidia and not self.gpu.native_dlss_fg,
-                               "DXVK_NVAPI_GPU_ARCH=AD100", self.gpu.is_nvidia)
+        self.w_spoof = _switch("Подменять архитектуру на RTX 40", False,
+                               "DXVK_NVAPI_GPU_ARCH=AD100 — только если в игре нет переключателя DLSS FG. "
+                               "Может вешать видеокарту", self.gpu.is_nvidia)
         adv.add_row(self.w_spoof)
+        self.w_hudfix = _switch("HUDFix", False, "Убирает двоение интерфейса в FG, но может вызывать вылеты")
+        adv.add_row(self.w_hudfix)
         self.w_overwrite = _switch("Заменять FSR/XeSS DLL игры", False, "файлами из комплекта OptiScaler")
         adv.add_row(self.w_overwrite)
         self.w_writelaunch = _switch("Прописать параметры запуска", g.source != "folder",
@@ -564,6 +567,7 @@ class Window(Adw.ApplicationWindow):
             upscaler=optiscaler.UPSCALERS[self.w_up.get_selected()],
             nvidia=self.gpu.is_nvidia,
             spoof_ada=self.w_spoof.get_active(),
+            hudfix=self.w_hudfix.get_active(),
             overwrite_game_files=self.w_overwrite.get_active(),
             dlss_preset=PRESETS[self.w_preset.get_selected()][1])
 
@@ -620,7 +624,8 @@ class Window(Adw.ApplicationWindow):
         if self.gpu.native_dlss_fg:
             desc = "У вас RTX 40/50 — DLSS FG и так доступен. Мод даёт до 6X и INT8-ядра"
         else:
-            desc = "Настоящий DLSS-G от NVIDIA на RTX 20/30 — проект dlssg_for_sm86"
+            desc = ("Настоящий DLSS-G от NVIDIA на RTX 20/30 — проект dlssg_for_sm86. "
+                    "Экспериментально: под Proton может не найти CUDA (Missing cuInit в логе)")
         grp = Adw.PreferencesGroup(title="DLSS Frame Generation", description=desc)
         link = Gtk.LinkButton(uri=dlssg_sm86.PROJECT_URL, label="Проект", valign=Gtk.Align.CENTER)
         grp.set_header_suffix(link)
@@ -690,6 +695,7 @@ class Window(Adw.ApplicationWindow):
         b.add_css_class("suggested-action")
         b.add_css_class("pill")
         b.connect("clicked", self.on_install_dlssg)
+        b.set_sensitive(has_fg)
         bb.append(b)
         grp.add(bb)
         return grp

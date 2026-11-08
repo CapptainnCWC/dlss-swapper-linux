@@ -160,7 +160,7 @@ def cmd_opti_install(a) -> None:
     opts = optiscaler.InstallOptions(
         proxy=a.proxy, fg_mode=a.fg, upscaler=a.upscaler or ("dlss" if info.has_dlss else "fsr31"),
         nvidia=info.is_nvidia if a.nvidia is None else a.nvidia,
-        spoof_ada=not a.no_spoof_arch, overwrite_game_files=a.overwrite,
+        spoof_ada=a.spoof_arch, hudfix=a.hudfix, overwrite_game_files=a.overwrite,
         dlss_preset=a.preset,
         extra_ini=dict(kv.split("=", 1) for kv in a.ini or []))
     res = optiscaler.install(g.path, target, b, opts)
@@ -307,8 +307,9 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--preset", type=int, help="пресет DLSS: 0=по умолч., 11=K, 13=M …")
     s.add_argument("--ini", action="append", metavar="Section.Key=value")
     s.add_argument("--nvidia", action=argparse.BooleanOptionalAction, default=None)
-    s.add_argument("--no-spoof-arch", action="store_true",
-                   help="не добавлять DXVK_NVAPI_GPU_ARCH=AD100")
+    s.add_argument("--spoof-arch", action="store_true",
+                   help="добавить DXVK_NVAPI_GPU_ARCH=AD100 (может вешать GPU)")
+    s.add_argument("--hudfix", action="store_true", help="включить HUDFix (может вызывать вылеты)")
     s.add_argument("--overwrite", action="store_true",
                    help="перезаписывать DLL игры (FSR/XeSS) файлами OptiScaler")
     s.add_argument("--no-launch", action="store_true", help="не трогать параметры запуска Steam")

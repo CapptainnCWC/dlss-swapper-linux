@@ -36,7 +36,7 @@ FG_MODES = {
     "optifg": "DLSS FG → FSR FG (OptiFG, рекомендуется)",
     "nukems": "DLSS FG → FSR3 FG (Nukem dlssg-to-fsr3)",
     "xefg": "DLSS FG → XeSS FG",
-    "upscaler": "FG из апскейлера (игры без DLSS FG, нужен HUDFix)",
+    "upscaler": "FG из апскейлера (игры без DLSS FG)",
 }
 FG_SHORT = {
     "none": "Выключено",
@@ -50,7 +50,7 @@ FG_HINTS = {
     "optifg": "DLSS FG игры → FSR FG. Рекомендуется",
     "nukems": "DLSS FG игры → dlssg-to-fsr3",
     "xefg": "DLSS FG игры → XeSS FG",
-    "upscaler": "Для игр без DLSS FG, с HUDFix",
+    "upscaler": "Для игр без DLSS FG. Включается в меню OptiScaler",
 }
 UPSCALERS =["dlss", "fsr31", "xess", "fsr22", "auto"]
 
@@ -194,7 +194,10 @@ class InstallOptions:
     fg_mode: str = "optifg"
     upscaler: str = "dlss"           # DX12/Vulkan/DX11 upscaler OptiScaler should use
     nvidia: bool = True
-    spoof_ada: bool = True           # DXVK_NVAPI_GPU_ARCH=AD100 (NVIDIA pre-RTX40)
+    # DXVK_NVAPI_GPU_ARCH=AD100. Off by default: NVIDIA's own components (DLSS SR via NGX) also
+    # see the fake arch and may launch Ada kernels on Ampere -> GPU hang (Xid 13/32).
+    spoof_ada: bool = False
+    hudfix: bool = False             # OptiFG HUDFix; OptiScaler warns it can crash
     overwrite_game_files: bool = False
     dlss_preset: int | None = None   # 0=default, 11=K, 13=M ...
     extra_ini: dict[str, str] = field(default_factory=dict)  # "Section.Key" -> value
@@ -215,11 +218,13 @@ def ini_settings(opts: InstallOptions) -> list[tuple[str, str, str]]:
         fg_in, fg_out = {"optifg": ("dlssg", "fsrfg"), "nukems": ("nukems", "nukems"),
                          "xefg": ("dlssg", "xefg"), "upscaler": ("upscaler", "fsrfg")}[opts.fg_mode]
         s += [("FrameGen", "Enabled", "true"), ("FrameGen", "FGInput", fg_in),
-              ("FrameGen", "FGOutput", fg_out),
-              ("Spoofing", "StreamlineSpoofing", "true"), ("Spoofing", "SpoofHAGS", "true"),
-              ("Menu", "OverlayMenu", "true")]
-        if opts.fg_mode == "upscaler":
-            s.append(("OptiFG", "HUDFix", "true"))
+              ("FrameGen", "FGOutput", fg_out), ("Menu", "OverlayMenu", "true"),
+              ("OptiFG", "HUDFix", "true" if opts.hudfix else "false")]
+        if uses_dlssg_input(opts.fg_mode):
+            # unlock the game's DLSS-G toggle: spoof only for Streamline, not globally
+            s += [("Spoofing", "StreamlineSpoofing", "true"), ("Spoofing", "SpoofHAGS", "true")]
+        else:
+            s.append(("Spoofing", "StreamlineSpoofing", "false"))
     if opts.nvidia:
         # keep the real GPU visible to the game, only Streamline is spoofed
         s.append(("Spoofing", "Dxgi", "false"))
@@ -232,11 +237,16 @@ def ini_settings(opts: InstallOptions) -> list[tuple[str, str, str]]:
     return s
 
 
+def uses_dlssg_input(fg_mode: str) -> bool:
+    """Modes that take the game's own DLSS-G inputs (need the in-game DLSS FG toggle)."""
+    return fg_mode in ("optifg", "nukems", "xefg")
+
+
 def launch_env(opts: InstallOptions) -> tuple[dict[str, str], dict[str, str]]:
     env: dict[str, str] = {}
     if opts.nvidia:
         env["PROTON_ENABLE_NVAPI"] = "1"
-        if opts.spoof_ada and opts.fg_mode != "none":
+        if opts.spoof_ada and uses_dlssg_input(opts.fg_mode):
             env["DXVK_NVAPI_GPU_ARCH"] = "AD100"
     overrides = {opts.proxy[:-4] if opts.proxy.endswith(".dll") else opts.proxy: "n,b"}
     return env, overrides
