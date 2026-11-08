@@ -36,6 +36,18 @@ def _strings(items: list[str]) -> Gtk.StringList:
     return Gtk.StringList.new(items)
 
 
+def _folder_label(rel: str | None) -> str:
+    return "папка игры" if rel in (".", "", None) else rel
+
+
+def _idx(items: list, value, default: int = 0) -> int:
+    """Index of value in items, or default — used to restore saved selections."""
+    try:
+        return items.index(value)
+    except ValueError:
+        return default
+
+
 def _popover_factory() -> Gtk.SignalListItemFactory:
     """Dropdown list items that show the full text (wrap instead of ellipsizing)."""
     f = Gtk.SignalListItemFactory()
@@ -432,94 +444,7 @@ class Window(Adw.ApplicationWindow):
             grp.add(row)
         page.add(grp)
 
-        if self.gpu.is_nvidia:
-            page.add(self._dlssg_group(g, cands))
-
-        # ---- OptiScaler
-        inst = optiscaler.installed(g.path)
-        if self.gpu.native_dlss_fg:
-            desc = "У вас RTX 40/50 — DLSS FG работает нативно"
-        elif self.gpu.is_nvidia:
-            desc = "Разблокирует DLSS FG: игра видит RTX 40, кадры генерирует FSR / XeSS FG"
-        else:
-            desc = "Подмена DLSS на FSR/XeSS и разблокировка FG через fakenvapi"
-        grp = Adw.PreferencesGroup(title="OptiScaler · Frame Generation", description=desc)
-        if inst:
-            k, v = next(iter(inst.items()))
-            st = Adw.ActionRow(title=f"Установлен {v['version']}",
-                               subtitle=f"{k} · {v['proxy']} · {optiscaler.FG_SHORT.get(v['fg_mode'], '')}")
-            st.add_prefix(Gtk.Image(icon_name="emblem-ok-symbolic"))
-            b = Gtk.Button(icon_name="document-edit-symbolic", valign=Gtk.Align.CENTER,
-                           tooltip_text="Открыть OptiScaler.ini")
-            b.add_css_class("flat")
-            b.connect("clicked", lambda *_: self._open(g.path / k / "OptiScaler.ini"))
-            st.add_suffix(b)
-            grp.add(st)
-        self._bundles = bundles
-        self._cands = cands or [g.path]
-        has_fg = any(d.kind == "dlss_g" for d in self.dlls)
-        has_dlss = any(d.kind == "dlss" for d in self.dlls)
-        self._modes = list(optiscaler.FG_MODES)
-        mode = "optifg" if has_fg else ("upscaler" if has_dlss else "none")
-        if self.gpu.native_dlss_fg:
-            mode = "none"
-        self.w_fg = _combo("Frame Generation", [optiscaler.FG_SHORT[m] for m in self._modes],
-                           self._modes.index(mode))
-
-        def fg_hint(*_):
-            m = self._modes[self.w_fg.get_selected()]
-            hint = optiscaler.FG_HINTS[m]
-            if not has_fg and m in ("optifg", "nukems", "xefg"):
-                hint = "В игре нет DLSS FG — выберите «Из апскейлера»"
-            self.w_fg.set_subtitle(hint)
-
-        self.w_fg.connect("notify::selected", fg_hint)
-        fg_hint()
-        grp.add(self.w_fg)
-        self.w_up = _combo("Апскейлер", [UPSCALER_NAMES[u] for u in optiscaler.UPSCALERS],
-                           0 if self.gpu.has_dlss else 1)
-        grp.add(self.w_up)
-        self.w_preset = _combo("Пресет DLSS", [p[0] for p in PRESETS])
-        grp.add(self.w_preset)
-
-        adv = Adw.ExpanderRow(title="Дополнительно")
-        self.w_bundle = _combo("Версия OptiScaler", [b.tag for b in bundles] + ["Последняя с GitHub"])
-        adv.add_row(self.w_bundle)
-        self.w_target = _combo("Папка с exe", [str(p.relative_to(g.path)) if p != g.path else "."
-                                               for p in self._cands])
-        self.w_target.set_factory(_value_factory(ellipsize=1, max_chars=18))  # "…/Binaries/Win64"
-        self.w_target.set_tooltip_text(str(self._cands[0]))
-        adv.add_row(self.w_target)
-        self.w_proxy = _combo("Имя прокси-DLL", optiscaler.PROXY_NAMES,
-                              subtitle="Если игра не стартует с dxgi.dll — попробуйте winmm.dll")
-        adv.add_row(self.w_proxy)
-        self.w_spoof = _switch("Подменять архитектуру на RTX 40", False,
-                               "DXVK_NVAPI_GPU_ARCH=AD100 — только если в игре нет переключателя DLSS FG. "
-                               "Может вешать видеокарту", self.gpu.is_nvidia)
-        adv.add_row(self.w_spoof)
-        self.w_hudfix = _switch("HUDFix", False, "Убирает двоение интерфейса в FG, но может вызывать вылеты")
-        adv.add_row(self.w_hudfix)
-        self.w_overwrite = _switch("Заменять FSR/XeSS DLL игры", False, "файлами из комплекта OptiScaler")
-        adv.add_row(self.w_overwrite)
-        self.w_writelaunch = _switch("Прописать параметры запуска", g.source != "folder",
-                                     "Steam должен быть закрыт", g.source != "folder")
-        adv.add_row(self.w_writelaunch)
-        grp.add(adv)
-
-        bb = Gtk.Box(spacing=8, halign=Gtk.Align.END, margin_top=12)
-        if inst:
-            b = Gtk.Button(label="Удалить")
-            b.add_css_class("destructive-action")
-            b.add_css_class("pill")
-            b.connect("clicked", self.on_remove_opti)
-            bb.append(b)
-        b = Gtk.Button(label="Переустановить" if inst else "Установить")
-        b.add_css_class("suggested-action")
-        b.add_css_class("pill")
-        b.connect("clicked", self.on_install_opti)
-        bb.append(b)
-        grp.add(bb)
-        page.add(grp)
+        page.add(self._fg_group(g, cands, bundles))
 
         # ---- launch options
         grp = Adw.PreferencesGroup(
@@ -560,192 +485,212 @@ class Window(Adw.ApplicationWindow):
         self.show_game()
         self._refresh_row(self.current)
 
-    def _opts(self) -> optiscaler.InstallOptions:
-        return optiscaler.InstallOptions(
-            proxy=optiscaler.PROXY_NAMES[self.w_proxy.get_selected()],
-            fg_mode=self._modes[self.w_fg.get_selected()],
-            upscaler=optiscaler.UPSCALERS[self.w_up.get_selected()],
-            nvidia=self.gpu.is_nvidia,
-            spoof_ada=self.w_spoof.get_active(),
-            hudfix=self.w_hudfix.get_active(),
-            overwrite_game_files=self.w_overwrite.get_active(),
-            dlss_preset=PRESETS[self.w_preset.get_selected()][1])
+    # ============================================================ Frame Generation (unified)
+    def _fg_group(self, g, cands, opti_bundles) -> Adw.PreferencesGroup:
+        method_now, rel_now, saved = core.current_fg(g)
+        own = [d for d in self.dlls if not d.owned_by_optiscaler]
+        has_fg = any(d.kind == "dlss_g" for d in own)
+        has_dlss = any(d.kind == "dlss" for d in own)
+        o = saved if method_now and method_now != "native" else {}
+        n = saved if method_now == "native" else {}
 
-    def on_install_opti(self, _b) -> None:
-        g = self.current
-        opts = self._opts()
-        target = self._cands[self.w_target.get_selected()]
-        bi = self.w_bundle.get_selected()
-        write = self.w_writelaunch.get_active()
-
-        def fn():
-            bundle = self._bundles[bi] if bi < len(self._bundles) else optiscaler.download_latest(self.progress_cb)
-            res = optiscaler.install(g.path, target, bundle, opts)
-            rel = str(target.relative_to(g.path)) if target != g.path else "."
-            return bundle, res, core.apply_launch_options(g, rel, opts, write=write)
-
-        def done(r):
-            bundle, res, lu = r
-            msg = [f"Файлов скопировано: {len(res.placed)}"]
-            if res.skipped:
-                msg.append("Оставлены файлы игры: " + ", ".join(Path(s).name for s in res.skipped))
-            msg += [f"⚠ {w}" for w in res.warnings]
-            if res.ini_missing:
-                msg.append("Нет ключей в ini: " + ", ".join(res.ini_missing))
-            msg.append(f"\nПараметры запуска:\n{lu.new}")
-            if lu.written:
-                msg.append("✓ Записаны в Steam")
-            else:
-                self._copy(lu.new)
-                msg.append(("⚠ " + lu.error + "\n" if lu.error else "") + "Строка скопирована в буфер обмена")
-            msg.append("\nВ игре включите DLSS и DLSS Frame Generation. Меню OptiScaler — Insert.")
-            self.alert(f"OptiScaler {bundle.tag} установлен", "\n".join(msg))
-            self.show_game()
-            self._refresh_row(g)
-
-        self.run_bg(fn, done, "Установка OptiScaler…")
-
-    def on_remove_opti(self, _b) -> None:
-        g = self.current
-        lu = core.remove_optiscaler(g, None, write=self.w_writelaunch.get_active())
-        if lu and not lu.written and lu.new != lu.old:
-            self._copy(lu.new)
-            self.alert("OptiScaler удалён", (lu.error or "") +
-                       f"\n\nВерните параметры запуска вручную (скопировано):\n{lu.new or '(пусто)'}")
-        else:
-            self.toast("OptiScaler удалён")
-        self.show_game()
-        self._refresh_row(g)
-
-    # ============================================================ native DLSS FG
-    def _dlssg_group(self, g, cands) -> Adw.PreferencesGroup:
-        inst = dlssg_sm86.installed(g.path)
-        has_fg = dlssg_sm86.game_has_dlssg(g.path) if not inst else True
         if self.gpu.native_dlss_fg:
-            desc = "У вас RTX 40/50 — DLSS FG и так доступен. Мод даёт до 6X и INT8-ядра"
+            desc = "У вас RTX 40/50 — DLSS FG работает и без модов"
+        elif has_fg:
+            desc = "В игре есть DLSS FG — его можно разблокировать на этой видеокарте"
+        elif has_dlss:
+            desc = "В игре нет DLSS FG — кадры может генерировать OptiScaler из данных DLSS"
         else:
-            desc = ("Настоящий DLSS-G от NVIDIA на RTX 20/30 — проект dlssg_for_sm86. "
-                    "Экспериментально: под Proton может не найти CUDA (Missing cuInit в логе)")
-        grp = Adw.PreferencesGroup(title="DLSS Frame Generation", description=desc)
-        link = Gtk.LinkButton(uri=dlssg_sm86.PROJECT_URL, label="Проект", valign=Gtk.Align.CENTER)
-        grp.set_header_suffix(link)
-        if not has_fg:
-            w = Adw.ActionRow(title="В игре нет DLSS FG",
-                              subtitle="Мод включает только встроенный DLSS-G. Для этой игры "
-                                       "используйте OptiScaler «Из апскейлера»")
-            w.add_prefix(Gtk.Image(icon_name="dialog-information-symbolic"))
-            grp.add(w)
-        if inst:
-            k, v = next(iter(inst.items()))
-            st = Adw.ActionRow(title=f"Установлен {v['version']}",
-                               subtitle=f"{k} · {v['proxy']} · {dlssg_sm86.FRAMES.get(v['max_frames'], '')}")
+            desc = "OptiScaler: подмена апскейлера и генерация кадров"
+        grp = Adw.PreferencesGroup(title="Frame Generation", description=desc)
+
+        if method_now:
+            if method_now == "native":
+                v = dlssg_sm86.installed(g.path)[rel_now]
+                sub = f"dlssg_for_sm86 {v['version']} · {_folder_label(rel_now)} · {v['proxy']}"
+                files = (("Открыть dlssg_sm86.ini", "document-edit-symbolic", g.path / rel_now / "dlssg_sm86.ini"),
+                         ("Открыть лог", "text-x-generic-symbolic", dlssg_sm86.log_path(g.path, rel_now)))
+            else:
+                v = optiscaler.installed(g.path)[rel_now]
+                sub = f"OptiScaler {v['version']} · {_folder_label(rel_now)} · {v['proxy']}"
+                if v.get("game_fsr"):
+                    sub += " · FSR игры"
+                files = (("Открыть OptiScaler.ini", "document-edit-symbolic", g.path / rel_now / "OptiScaler.ini"),
+                         ("Открыть лог", "text-x-generic-symbolic", g.path / rel_now / "OptiScaler.log"))
+            st = Adw.ActionRow(title=f"Установлено: {core.FG_METHODS.get(method_now, method_now)}", subtitle=sub)
             st.add_prefix(Gtk.Image(icon_name="emblem-ok-symbolic"))
-            for icon, tip, path in (("text-x-generic-symbolic", "Открыть лог", dlssg_sm86.log_path(g.path, k)),
-                                    ("document-edit-symbolic", "Открыть dlssg_sm86.ini",
-                                     g.path / k / "dlssg_sm86.ini")):
+            for tip, icon, path in files:
                 b = Gtk.Button(icon_name=icon, valign=Gtk.Align.CENTER, tooltip_text=tip)
                 b.add_css_class("flat")
                 b.connect("clicked", lambda _b, p=path: self._open(p) if p.exists()
-                          else self.toast("Лог появится после запуска игры"))
+                          else self.toast("Файл появится после запуска игры"))
                 st.add_suffix(b)
             grp.add(st)
 
+        self._methods = [m for m in core.FG_METHODS if m != "native" or self.gpu.is_nvidia]
+        default = "optifg" if has_fg else ("upscaler" if has_dlss else "none")
+        if self.gpu.native_dlss_fg:
+            default = "none"
+        self.w_method = _combo("Способ", [core.FG_METHODS[m] for m in self._methods],
+                               _idx(self._methods, method_now or default))
+        grp.add(self.w_method)
+
+        # OptiScaler options
+        self.w_up = _combo("Апскейлер", [UPSCALER_NAMES[u] for u in optiscaler.UPSCALERS],
+                           _idx(optiscaler.UPSCALERS, o.get("upscaler"), 0 if self.gpu.has_dlss else 1))
+        grp.add(self.w_up)
+        preset_vals = [p[1] for p in PRESETS]
+        self.w_preset = _combo("Пресет DLSS", [p[0] for p in PRESETS], _idx(preset_vals, o.get("dlss_preset")))
+        grp.add(self.w_preset)
+        # native options
         self._dg_frames = list(dlssg_sm86.FRAMES)
-        self.dg_frames = _combo("Кадров генерировать", list(dlssg_sm86.FRAMES.values()), 0,
-                                "Игра может выбрать меньше в своём меню")
+        self.dg_frames = _combo("Кадров генерировать", list(dlssg_sm86.FRAMES.values()),
+                                _idx(self._dg_frames, n.get("max_frames"), 0), "Игра может выбрать меньше")
         grp.add(self.dg_frames)
         self._dg_engines = list(dlssg_sm86.ENGINES)
-        self.dg_engine = _combo("Движок", list(dlssg_sm86.ENGINES.values()))
+        self.dg_engine = _combo("Движок", list(dlssg_sm86.ENGINES.values()), _idx(self._dg_engines, n.get("engine")))
         grp.add(self.dg_engine)
         self._dg_presets = list(dlssg_sm86.PRESETS)
-        self.dg_preset = _combo("Пресет", list(dlssg_sm86.PRESETS.values()))
+        self.dg_preset = _combo("Пресет DLSS-G", list(dlssg_sm86.PRESETS.values()),
+                                _idx(self._dg_presets, n.get("preset")))
         grp.add(self.dg_preset)
 
         adv = Adw.ExpanderRow(title="Дополнительно")
+        self._cands = cands or [g.path]
+        rels = [str(p.relative_to(g.path)) if p != g.path else "." for p in self._cands]
+        self.w_target = _combo("Папка с exe", [_folder_label(r) for r in rels], _idx(rels, rel_now))
+        self.w_target.set_factory(_value_factory(ellipsize=1, max_chars=18))
+        adv.add_row(self.w_target)
+        self.w_writelaunch = _switch("Прописать параметры запуска", g.source != "folder",
+                                     "Steam должен быть закрыт", g.source != "folder")
+        adv.add_row(self.w_writelaunch)
+        self._bundles = opti_bundles
+        self.w_bundle = _combo("Версия OptiScaler", [b.tag for b in opti_bundles] + ["Последняя с GitHub"],
+                               _idx([b.tag for b in opti_bundles], o and optiscaler.installed(g.path)
+                                    .get(rel_now, {}).get("version")))
+        self.w_proxy = _combo("Имя прокси-DLL", optiscaler.PROXY_NAMES, _idx(optiscaler.PROXY_NAMES, o.get("proxy")),
+                              "Если игра не стартует с dxgi.dll — попробуйте winmm.dll")
+        game_fsr = optiscaler.game_has_fsr31(self._cands[_idx(rels, rel_now)])
+        self.w_gamefsr = _switch("FSR FG из игры", o.get("use_game_fsr", True) and game_fsr,
+                                 "Свой FSR 3.1 игры стабильнее FSR 4 из комплекта под Proton"
+                                 if game_fsr else "В игре нет своего FSR 3.1", game_fsr)
+        self.w_waitable = _switch("Сигнал готовности кадра", o.get("simulate_waitable", True),
+                                  "SimulateWaitableObject — против зависания при старте FG под Proton")
+        self.w_hudfix = _switch("HUDFix", o.get("hudfix", False),
+                                "Убирает двоение интерфейса, но может вызывать вылеты")
+        self.w_spoof = _switch("Подменять архитектуру на RTX 40", o.get("spoof_ada", False),
+                               "DXVK_NVAPI_GPU_ARCH=AD100 — может вешать видеокарту", self.gpu.is_nvidia)
+        self.w_overwrite = _switch("Заменять FSR/XeSS DLL игры", o.get("overwrite_game_files", False),
+                                   "файлами из комплекта OptiScaler")
+        self.w_log = _switch("Лог OptiScaler", o.get("log", False), "OptiScaler.log для диагностики")
         self._dg_bundles = dlssg_sm86.local_bundles()
-        self.dg_bundle = _combo("Версия мода", [b.version for b in self._dg_bundles] + ["Последняя с GitHub"])
-        adv.add_row(self.dg_bundle)
-        self._dg_cands = cands or [g.path]
-        self.dg_target = _combo("Папка с exe", [str(p.relative_to(g.path)) if p != g.path else "."
-                                                for p in self._dg_cands])
-        self.dg_target.set_factory(_value_factory(ellipsize=1, max_chars=18))
-        adv.add_row(self.dg_target)
-        self.dg_proxy = _combo("Имя прокси-DLL", dlssg_sm86.PROXIES,
-                               subtitle="Если мод не загрузился — следующее по списку")
-        adv.add_row(self.dg_proxy)
+        self.dg_bundle = _combo("Версия dlssg_for_sm86", [b.version for b in self._dg_bundles] + ["Последняя с GitHub"])
+        self.dg_proxy = _combo("Имя прокси-DLL", dlssg_sm86.PROXIES, _idx(dlssg_sm86.PROXIES, n.get("proxy")),
+                               "Если мод не загрузился — следующее по списку")
         self._dg_sr = list(dlssg_sm86.SR_MODES)
         self.dg_sr = _combo("Ускорение DLSS SR", list(dlssg_sm86.SR_MODES.values()),
-                            subtitle="INT8-ядра для пресетов L/M, +180 МБ")
-        adv.add_row(self.dg_sr)
-        self.dg_verbose = _switch("Подробный лог", True, "Нужен для диагностики первого запуска")
-        adv.add_row(self.dg_verbose)
-        self.dg_writelaunch = _switch("Прописать параметры запуска", g.source != "folder",
-                                      "Steam должен быть закрыт", g.source != "folder")
-        adv.add_row(self.dg_writelaunch)
+                            _idx(self._dg_sr, n.get("super_resolution")), "INT8-ядра для пресетов L/M, +180 МБ")
+        self.dg_verbose = _switch("Подробный лог", n.get("verbose_log", True), "Нужен для диагностики")
+        opti_rows = [self.w_bundle, self.w_proxy, self.w_gamefsr, self.w_waitable, self.w_hudfix,
+                     self.w_spoof, self.w_overwrite, self.w_log]
+        native_rows = [self.dg_bundle, self.dg_proxy, self.dg_sr, self.dg_verbose]
+        for r in opti_rows + native_rows:
+            adv.add_row(r)
         grp.add(adv)
 
+        def update(*_):
+            m = self._methods[self.w_method.get_selected()]
+            native = m == "native"
+            for r in [self.w_up, self.w_preset] + opti_rows:
+                r.set_visible(not native)
+            for r in [self.dg_frames, self.dg_engine, self.dg_preset] + native_rows:
+                r.set_visible(native)
+            fg_on = m not in ("none", "native")
+            for r in (self.w_waitable, self.w_hudfix):
+                r.set_sensitive(fg_on)
+            self.w_spoof.set_sensitive(self.gpu.is_nvidia and optiscaler.uses_dlssg_input(m))
+            hint = core.FG_METHOD_HINTS[m]
+            if m in ("optifg", "nukems", "xefg", "native") and not has_fg:
+                hint = "В игре нет DLSS FG — этот способ не сработает, выберите «Из апскейлера»"
+            self.w_method.set_subtitle(hint)
+
+        self.w_method.connect("notify::selected", update)
+        update()
+
         bb = Gtk.Box(spacing=8, halign=Gtk.Align.END, margin_top=12)
-        if inst:
+        if method_now:
             b = Gtk.Button(label="Удалить")
             b.add_css_class("destructive-action")
             b.add_css_class("pill")
-            b.connect("clicked", self.on_remove_dlssg)
+            b.connect("clicked", self.on_remove_fg)
             bb.append(b)
-        b = Gtk.Button(label="Переустановить" if inst else "Включить DLSS FG")
+        b = Gtk.Button(label="Применить" if method_now else "Установить")
         b.add_css_class("suggested-action")
         b.add_css_class("pill")
-        b.connect("clicked", self.on_install_dlssg)
-        b.set_sensitive(has_fg)
+        b.connect("clicked", self.on_apply_fg)
         bb.append(b)
         grp.add(bb)
         return grp
 
-    def on_install_dlssg(self, _b) -> None:
+    def on_apply_fg(self, _b) -> None:
         g = self.current
-        opts = dlssg_sm86.Options(
+        method = self._methods[self.w_method.get_selected()]
+        target = self._cands[self.w_target.get_selected()]
+        write = self.w_writelaunch.get_active()
+        opti_opts = optiscaler.InstallOptions(
+            proxy=optiscaler.PROXY_NAMES[self.w_proxy.get_selected()],
+            upscaler=optiscaler.UPSCALERS[self.w_up.get_selected()],
+            nvidia=self.gpu.is_nvidia, spoof_ada=self.w_spoof.get_active(),
+            hudfix=self.w_hudfix.get_active(), overwrite_game_files=self.w_overwrite.get_active(),
+            dlss_preset=PRESETS[self.w_preset.get_selected()][1], use_game_fsr=self.w_gamefsr.get_active(),
+            simulate_waitable=self.w_waitable.get_active(), log=self.w_log.get_active())
+        dg_opts = dlssg_sm86.Options(
             proxy=dlssg_sm86.PROXIES[self.dg_proxy.get_selected()],
             engine=self._dg_engines[self.dg_engine.get_selected()],
             max_frames=self._dg_frames[self.dg_frames.get_selected()],
             preset=self._dg_presets[self.dg_preset.get_selected()],
-            super_resolution=self._dg_sr[self.dg_sr.get_selected()],
-            verbose_log=self.dg_verbose.get_active())
-        target = self._dg_cands[self.dg_target.get_selected()]
-        bi = self.dg_bundle.get_selected()
-        write = self.dg_writelaunch.get_active()
+            super_resolution=self._dg_sr[self.dg_sr.get_selected()], verbose_log=self.dg_verbose.get_active())
+        bi, di = self.w_bundle.get_selected(), self.dg_bundle.get_selected()
+
+        def opti_bundle():
+            return self._bundles[bi] if bi < len(self._bundles) else optiscaler.download_latest(self.progress_cb)
+
+        def dg_bundle():
+            return (self._dg_bundles[di] if di < len(self._dg_bundles)
+                    else dlssg_sm86.download_latest(self.progress_cb))
 
         def fn():
-            bundle = (self._dg_bundles[bi] if bi < len(self._dg_bundles)
-                      else dlssg_sm86.download_latest(self.progress_cb))
-            res = dlssg_sm86.install(g.path, target, bundle, opts)
-            rel = str(target.relative_to(g.path)) if target != g.path else "."
-            return bundle, res, core.apply_dlssg_launch_options(g, rel, opts, write=write), rel
+            return core.setup_fg(g, target, method, opti_opts, opti_bundle, dg_opts, dg_bundle, write)
 
         def done(r):
-            bundle, res, lu, rel = r
-            msg = [f"Файлов: {len(res.placed)}"] + [f"⚠ {w}" for w in res.warnings]
-            msg.append(f"\nПараметры запуска:\n{lu.new}")
+            lu = r.launch
+            msg = [f"{core.FG_METHODS[r.method]} · версия {r.version} · файлов: {r.placed}"]
+            msg += [f"⚠ {w}" for w in r.warnings]
+            msg.append(f"\nПараметры запуска:\n{lu.new or '(пусто)'}")
             if lu.written:
                 msg.append("✓ Записаны в Steam")
             else:
                 self._copy(lu.new)
                 msg.append(("⚠ " + lu.error + "\n" if lu.error else "") + "Строка скопирована в буфер обмена")
-            msg.append("\nВ игре включите DLSS Frame Generation. "
-                       "Если переключатель не появился — пришлите лог мода.")
-            self.alert(f"dlssg_for_sm86 {bundle.version} установлен", "\n".join(msg))
+            if r.method == "native":
+                msg.append("\nВ игре включите DLSS Frame Generation.")
+            elif r.method != "none":
+                msg.append("\nВ игре включите DLSS. Меню OptiScaler — Insert.")
+            self.alert("Готово", "\n".join(msg))
             self.show_game()
             self._refresh_row(g)
 
-        self.run_bg(fn, done, "Установка DLSS FG…")
+        self.run_bg(fn, done, "Установка…")
 
-    def on_remove_dlssg(self, _b) -> None:
+    def on_remove_fg(self, _b) -> None:
         g = self.current
-        lu = core.remove_dlssg(g, None, write=self.dg_writelaunch.get_active())
+        lu = core.remove_all_fg(g, write=self.w_writelaunch.get_active())
         if lu and not lu.written and lu.new != lu.old:
             self._copy(lu.new)
-            self.alert("DLSS FG удалён", (lu.error or "") +
+            self.alert("Удалено", (lu.error or "") +
                        f"\n\nВерните параметры запуска вручную (скопировано):\n{lu.new or '(пусто)'}")
         else:
-            self.toast("dlssg_for_sm86 удалён")
+            self.toast("Удалено, логи сохранены")
         self.show_game()
         self._refresh_row(g)
 

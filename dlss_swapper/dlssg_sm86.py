@@ -21,7 +21,7 @@ import re
 import shutil
 import tempfile
 import zipfile
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from . import launchopts
@@ -241,6 +241,7 @@ def install(game_dir: Path, target_dir: Path, bundle: Bundle, opts: Options) -> 
     ini.write_text(text)
 
     state.setdefault(STATE_KEY, {})[rel_target] = {
+        "options": asdict(opts),
         "version": bundle.version, "proxy": opts.proxy, "engine": opts.engine,
         "max_frames": opts.max_frames, "placed": placed, "backups": backups,
     }

@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from . import launchopts, sevenzip
@@ -200,6 +200,13 @@ class InstallOptions:
     hudfix: bool = False             # OptiFG HUDFix; OptiScaler warns it can crash
     overwrite_game_files: bool = False
     dlss_preset: int | None = None   # 0=default, 11=K, 13=M ...
+    # Use the game's own FSR 3.1 (monolithic amd_fidelityfx_dx12.dll) for FG instead of the bundled
+    # FSR 4 SDK files; the bundled FG crashed RTX 30 under vkd3d-proton (Xid 32).
+    use_game_fsr: bool = True
+    # Signal the frame-latency waitable object for the FG swapchain; without it games that wait on
+    # it (e.g. The Last of Us Part I) freeze as soon as FG starts under Proton.
+    simulate_waitable: bool = True
+    log: bool = False
     extra_ini: dict[str, str] = field(default_factory=dict)  # "Section.Key" -> value
 
 
@@ -219,7 +226,8 @@ def ini_settings(opts: InstallOptions) -> list[tuple[str, str, str]]:
                          "xefg": ("dlssg", "xefg"), "upscaler": ("upscaler", "fsrfg")}[opts.fg_mode]
         s += [("FrameGen", "Enabled", "true"), ("FrameGen", "FGInput", fg_in),
               ("FrameGen", "FGOutput", fg_out), ("Menu", "OverlayMenu", "true"),
-              ("OptiFG", "HUDFix", "true" if opts.hudfix else "false")]
+              ("OptiFG", "HUDFix", "true" if opts.hudfix else "false"),
+              ("Hotfix", "SimulateWaitableObject", "true" if opts.simulate_waitable else "auto")]
         if uses_dlssg_input(opts.fg_mode):
             # unlock the game's DLSS-G toggle: spoof only for Streamline, not globally
             s += [("Spoofing", "StreamlineSpoofing", "true"), ("Spoofing", "SpoofHAGS", "true")]
@@ -231,10 +239,21 @@ def ini_settings(opts: InstallOptions) -> list[tuple[str, str, str]]:
     if opts.dlss_preset is not None:
         s += [("DLSS", "RenderPresetOverride", "true" if opts.dlss_preset else "false"),
               ("DLSS", "RenderPresetForAll", str(opts.dlss_preset))]
+    if opts.log:
+        s += [("Log", "LogToFile", "true"), ("Log", "LogLevel", "1")]
     for k, v in opts.extra_ini.items():
         sec, key = k.split(".", 1)
         s.append((sec, key, v))
     return s
+
+
+FFX_SPLIT_FILES = {"amd_fidelityfx_framegeneration_dx12.dll", "amd_fidelityfx_upscaler_dx12.dll"}
+
+
+def game_has_fsr31(target_dir: Path) -> bool:
+    """True if the game ships a monolithic FSR 3.1 DX12 library OptiScaler can use for FG."""
+    f = Path(target_dir) / "amd_fidelityfx_dx12.dll"
+    return f.is_file() and f.stat().st_size > 1_000_000
 
 
 def uses_dlssg_input(fg_mode: str) -> bool:
@@ -285,6 +304,7 @@ def install(game_dir: Path, target_dir: Path, bundle: Bundle, opts: InstallOptio
                         "положите его в папку игры вручную.")
 
     placed, skipped, backups = [], [], {}
+    use_game_fsr = opts.use_game_fsr and game_has_fsr31(target_dir)
 
     def place(src: Path, dst: Path):
         rel = str(dst.relative_to(game_dir))
@@ -307,6 +327,8 @@ def install(game_dir: Path, target_dir: Path, bundle: Bundle, opts: InstallOptio
         for fn in files:
             if fn.lower() in SKIP_FILES or fn.startswith("!!"):
                 continue
+            if use_game_fsr and fn.lower() in FFX_SPLIT_FILES:
+                continue
             src = Path(root) / fn
             place(src, target_dir / src.relative_to(bundle.path))
     place(bundle.path / "OptiScaler.dll", target_dir / opts.proxy)
@@ -327,7 +349,7 @@ def install(game_dir: Path, target_dir: Path, bundle: Bundle, opts: InstallOptio
 
     state.setdefault("optiscaler", {})[rel_target] = {
         "version": bundle.tag, "proxy": opts.proxy, "fg_mode": opts.fg_mode,
-        "placed": placed, "backups": backups,
+        "placed": placed, "backups": backups, "options": asdict(opts), "game_fsr": use_game_fsr,
     }
     save_state(game_dir, state)
     return InstallResult(target_dir, placed, skipped, backups, ini_missing, warnings)

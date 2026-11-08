@@ -34,30 +34,32 @@ git clone https://github.com/CapptainnCWC/dlss-swapper-linux && cd dlss-swapper-
 
 Если в Steam нажать «Проверить целостность файлов», Steam вернёт оригинальные DLL.
 
-### Frame Generation на RTX 20/30 через Proton
-1. OptiScaler кладётся рядом с exe игры как `dxgi.dll` (можно выбрать `winmm.dll`, `version.dll` и т.д.).
-2. В `OptiScaler.ini` включаются `FGInput=dlssg`, `FGOutput=fsrfg` (или `nukems` / `xefg`), `StreamlineSpoofing`, `SpoofHAGS`, апскейлер остаётся DLSS.
-3. В параметры запуска Steam добавляется:
-   ```
-   WINEDLLOVERRIDES=dxgi=n,b DXVK_NVAPI_GPU_ARCH=AD100 PROTON_ENABLE_NVAPI=1 %command%
-   ```
-   `WINEDLLOVERRIDES` заставляет Wine загрузить DLL OptiScaler вместо системной, а `DXVK_NVAPI_GPU_ARCH=AD100` говорит игре, что у вас видеокарта поколения Ada (RTX 40), и тогда в меню появляется DLSS FG.
-4. В игре включите DLSS и DLSS Frame Generation. Меню OptiScaler открывается клавишей **Insert**.
+### Frame Generation
+Всё про генерацию кадров собрано в одной карточке **Frame Generation**. Выберите способ и нажмите «Установить» (или «Применить», если уже установлено). Приложение уберёт то, что стояло раньше, поставит выбранное и один раз запишет параметры запуска Steam. Выбранные настройки сохраняются в состоянии игры и показываются при следующем открытии.
 
-Для игр, где есть DLSS, но нет DLSS FG, выберите режим **«FG из апскейлера»** (OptiFG + HUDFix).
+| Способ | Что делает | Когда выбирать |
+|---|---|---|
+| Только апскейлер | OptiScaler без FG | Нужен другой апскейлер или настройки DLSS |
+| FSR FG (OptiFG) | DLSS FG игры → FSR FG через OptiScaler | В игре есть DLSS FG, видеокарта без RTX 40 |
+| FSR3 FG (Nukem) | DLSS FG игры → dlssg-to-fsr3 | То же, другая реализация |
+| XeSS FG | DLSS FG игры → XeSS FG | То же |
+| Из апскейлера | OptiScaler генерирует кадры из данных DLSS | В игре нет DLSS FG (например, The Last of Us Part I) |
+| DLSS FG (sm86) | Настоящий DLSS-G через [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86) | В игре есть DLSS FG, экспериментально |
+
+Что выяснилось при отладке под Proton (RTX 3060, The Last of Us Part I) и выставлено по умолчанию:
+- **FSR FG из игры.** Если в игре есть свой FSR 3.1 (`amd_fidelityfx_dx12.dll`), OptiScaler берёт его, а файлы FSR 4 SDK из комплекта не копируются: FG из FSR 4 SDK ронял видеокарту (Xid 32).
+- **Сигнал готовности кадра** (`SimulateWaitableObject=true`) включён. Без него игра зависала сразу после старта FG.
+- **HUDFix** выключен: он может вызывать вылеты.
+- **Подмена архитектуры** `DXVK_NVAPI_GPU_ARCH=AD100` выключена. С ней DLSS запускал на RTX 30 ядра для RTX 40, и видеокарта падала (Xid 13/32). Включайте её только в режимах, где игре нужно показать переключатель DLSS FG.
+- Если игра зависает при открытии меню OptiScaler (Insert), а FG работает, играйте без меню: FG уже включён в `OptiScaler.ini`.
+
+Для OptiScaler в параметры запуска добавляется `WINEDLLOVERRIDES=dxgi=n,b PROTON_ENABLE_NVAPI=1`, для dlssg_for_sm86 — `WINEDLLOVERRIDES=version=n,b PROTON_ENABLE_NVAPI=1`. При удалении приложение убирает только то, что добавило само, а логи модов оставляет.
+
+**dlssg_for_sm86.** Скачивается релиз автора (MIT), SHA-256 каждого файла проверяется по его `manifest.json`. Нужна игра со встроенным DLSS FG (`sl.dlss_g.dll`) и драйвер R580+. Под Proton мод может не найти CUDA: в логе `<папка exe>/dlssg_sm86/logs/dlssg_sm86.log` будет `Missing cuInit`.
 
 > ⚠ Steam перезаписывает свой конфиг при выходе, поэтому **закройте Steam**, прежде чем записывать параметры запуска. Если Steam открыт, строка копируется в буфер обмена — вставьте её вручную: *Свойства игры → Параметры запуска*.
 
-> ⚠ Не используйте OptiScaler и подмену DLL в онлайн-играх с античитом: это может закончиться баном. Приложение предупреждает, если находит EAC/BattlEye.
-
-### Нативный DLSS FG (dlssg_for_sm86)
-Карточка **DLSS Frame Generation** скачивает последний релиз [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86) (MIT), проверяет SHA-256 каждого файла по его `manifest.json` и кладёт рядом с exe игры `version.dll`, `dlssg_sm86.ini` и папку `dlssg_sm86\`. В параметры запуска добавляется `WINEDLLOVERRIDES=version=n,b PROTON_ENABLE_NVAPI=1`.
-
-- Нужна игра со встроенным DLSS FG (`sl.dlss_g.dll` / `nvngx_dlssg.dll`) и драйвер NVIDIA R580+.
-- Мод сам подменяет архитектуру GPU только для Streamline. **Не добавляйте `DXVK_NVAPI_GPU_ARCH`** вместе с ним: по данным автора, глобальная подмена вешает видеокарту.
-- Не включайте одновременно FG в OptiScaler.
-- Лог мода: `<папка exe>/dlssg_sm86/logs/dlssg_sm86.log`. Если переключатель FG не появился, выберите следующий прокси: `winmm.dll`, `dbghelp.dll`, `dinput8.dll`…
-- Работу под Proton автор не заявляет. Проверяйте по логу.
+> ⚠ Не используйте моды в онлайн-играх с античитом: это может закончиться баном. Приложение предупреждает, если находит EAC/BattlEye.
 
 ## CLI
 
@@ -69,7 +71,8 @@ dlss-swapper-linux swap "Cyberpunk" latest    # DLSS/FG/RR до последни
 dlss-swapper-linux swap 1091500 310.9.16.0 --type dlss
 dlss-swapper-linux restore "Cyberpunk"        # вернуть оригиналы
 dlss-swapper-linux opti-install "Cyberpunk" --fg optifg --preset 11
-dlss-swapper-linux opti-install "Game" --fg upscaler --proxy winmm.dll
+dlss-swapper-linux opti-install "Game" --fg upscaler --log          # FG для игр без DLSS FG
+dlss-swapper-linux opti-install "Game" --fg upscaler --no-game-fsr  # FSR из комплекта OptiScaler
 dlss-swapper-linux opti-remove "Cyberpunk"
 dlss-swapper-linux dlssg-install "Cyberpunk" --frames 2x --verbose   # нативный DLSS FG
 dlss-swapper-linux dlssg-remove "Cyberpunk"

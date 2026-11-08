@@ -143,6 +143,31 @@ def _bundle(a) -> optiscaler.Bundle:
     return optiscaler.download_latest(_progress)
 
 
+def _target(a, g) -> Path:
+    target = Path(a.target) if a.target else (swapper.exe_candidates(g.path) or [g.path])[0]
+    return target if target.is_absolute() else g.path / target
+
+
+def _print_setup(r: core.FgSetupResult) -> None:
+    print(f"{core.FG_METHODS[r.method]}: версия {r.version}, {r.target} ({r.placed} файлов)")
+    for w in r.warnings:
+        print(f"  ⚠ {w}")
+    lu = r.launch
+    print(f"\nПараметры запуска Steam:\n  {lu.new or '(пусто)'}")
+    if lu.written:
+        print("  ✓ записаны в конфиг Steam")
+    if lu.error:
+        print(f"  ⚠ {lu.error}")
+
+
+def _print_removed(lu) -> None:
+    print("Удалено (логи сохранены).")
+    if lu:
+        print(f"Параметры запуска: {lu.new or '(пусто)'}" + (" ✓" if lu.written else ""))
+        if lu.error:
+            print(f"  ⚠ {lu.error}")
+
+
 def cmd_opti_install(a) -> None:
     g = _find_game(a.game, a.dir)
     info = gpu.detect()
@@ -153,41 +178,20 @@ def cmd_opti_install(a) -> None:
     if ac and not a.yes:
         sys.exit(f"⚠ Найден античит ({', '.join(ac)}). Моды могут привести к бану. "
                  "Добавьте --yes, если игра оффлайн/античит отключён.")
-    target = Path(a.target) if a.target else (swapper.exe_candidates(g.path) or [g.path])[0]
-    if not target.is_absolute():
-        target = g.path / target
-    b = _bundle(a)
     opts = optiscaler.InstallOptions(
-        proxy=a.proxy, fg_mode=a.fg, upscaler=a.upscaler or ("dlss" if info.has_dlss else "fsr31"),
+        proxy=a.proxy, upscaler=a.upscaler or ("dlss" if info.has_dlss else "fsr31"),
         nvidia=info.is_nvidia if a.nvidia is None else a.nvidia,
         spoof_ada=a.spoof_arch, hudfix=a.hudfix, overwrite_game_files=a.overwrite,
-        dlss_preset=a.preset,
+        dlss_preset=a.preset, use_game_fsr=a.game_fsr, simulate_waitable=a.waitable, log=a.log,
         extra_ini=dict(kv.split("=", 1) for kv in a.ini or []))
-    res = optiscaler.install(g.path, target, b, opts)
-    print(f"OptiScaler {b.tag} установлен в {target}")
-    print(f"  файлов: {len(res.placed)}, пропущено (уже есть в игре): {len(res.skipped)}")
-    for s in res.skipped:
-        print(f"    = {s}")
-    for w in res.warnings + [f"нет ключа в ini: {m}" for m in res.ini_missing]:
-        print(f"  ⚠ {w}")
-    rel = str(target.relative_to(g.path)) if target != g.path else "."
-    lu = core.apply_launch_options(g, rel, opts, write=not a.no_launch)
-    print(f"\nПараметры запуска Steam:\n  {lu.new}")
-    if lu.written:
-        print("  ✓ записаны в конфиг Steam")
-    elif lu.error:
-        print(f"  ⚠ {lu.error}")
-    print("\nВ игре: включите DLSS и DLSS Frame Generation. Меню OptiScaler — клавиша Insert.")
+    r = core.setup_fg(g, _target(a, g), a.fg, opts, lambda: _bundle(a), dlssg_sm86.Options(),
+                      lambda: None, write=not a.no_launch)
+    _print_setup(r)
+    print("\nВ игре включите DLSS. Меню OptiScaler — клавиша Insert.")
 
 
 def cmd_opti_remove(a) -> None:
-    g = _find_game(a.game, a.dir)
-    lu = core.remove_optiscaler(g, None, write=not a.no_launch)
-    print("OptiScaler удалён.")
-    if lu:
-        print(f"Параметры запуска: {lu.new or '(пусто)'}" + (" ✓" if lu.written else ""))
-        if lu.error:
-            print(f"  ⚠ {lu.error}")
+    _print_removed(core.remove_all_fg(_find_game(a.game, a.dir), write=not a.no_launch))
 
 
 def cmd_dlssg_fetch(a) -> None:
@@ -210,39 +214,22 @@ def _dlssg_bundle(a) -> dlssg_sm86.Bundle:
 
 def cmd_dlssg_install(a) -> None:
     g = _find_game(a.game, a.dir)
-    info = gpu.detect()
-    if not info.is_nvidia:
+    if not gpu.detect().is_nvidia:
         sys.exit("dlssg_for_sm86 работает только на видеокартах NVIDIA RTX.")
-    target = Path(a.target) if a.target else (swapper.exe_candidates(g.path) or [g.path])[0]
-    if not target.is_absolute():
-        target = g.path / target
-    b = _dlssg_bundle(a)
     frames = {"2x": 1, "3x": 2, "4x": 3, "6x": 5}[a.frames.lower()]
     opts = dlssg_sm86.Options(proxy=a.proxy, engine=a.engine, max_frames=frames, preset=a.preset,
                               super_resolution=a.sr, verbose_log=a.verbose)
-    res = dlssg_sm86.install(g.path, target, b, opts)
-    print(f"dlssg_for_sm86 {b.version} установлен в {target} ({len(res.placed)} файлов)")
-    for w in res.warnings:
-        print(f"  ⚠ {w}")
+    target = _target(a, g)
+    r = core.setup_fg(g, target, "native", optiscaler.InstallOptions(), lambda: None, opts,
+                      lambda: _dlssg_bundle(a), write=not a.no_launch)
+    _print_setup(r)
     rel = str(target.relative_to(g.path)) if target != g.path else "."
-    lu = core.apply_dlssg_launch_options(g, rel, opts, write=not a.no_launch)
-    print(f"\nПараметры запуска Steam:\n  {lu.new}")
-    if lu.written:
-        print("  ✓ записаны в конфиг Steam")
-    if lu.error:
-        print(f"  ⚠ {lu.error}")
     print(f"\nЛог мода: {dlssg_sm86.log_path(g.path, rel)}")
     print("В игре включите DLSS Frame Generation.")
 
 
 def cmd_dlssg_remove(a) -> None:
-    g = _find_game(a.game, a.dir)
-    lu = core.remove_dlssg(g, None, write=not a.no_launch)
-    print("dlssg_for_sm86 удалён.")
-    if lu:
-        print(f"Параметры запуска: {lu.new or '(пусто)'}" + (" ✓" if lu.written else ""))
-        if lu.error:
-            print(f"  ⚠ {lu.error}")
+    _print_removed(core.remove_all_fg(_find_game(a.game, a.dir), write=not a.no_launch))
 
 
 def cmd_launch(a) -> None:
@@ -297,7 +284,7 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--tag")
     s.set_defaults(fn=cmd_opti_fetch)
 
-    s = sub.add_parser("opti-install", help="установить OptiScaler (+ разблокировка FG)")
+    s = sub.add_parser("opti-install", help="установить OptiScaler (заменяет dlssg_for_sm86)")
     s.add_argument("game")
     s.add_argument("--fg", default="optifg", choices=list(optiscaler.FG_MODES))
     s.add_argument("--proxy", default="dxgi.dll", choices=optiscaler.PROXY_NAMES)
@@ -310,6 +297,11 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--spoof-arch", action="store_true",
                    help="добавить DXVK_NVAPI_GPU_ARCH=AD100 (может вешать GPU)")
     s.add_argument("--hudfix", action="store_true", help="включить HUDFix (может вызывать вылеты)")
+    s.add_argument("--game-fsr", action=argparse.BooleanOptionalAction, default=True,
+                   help="FSR FG из игры вместо FSR 4 из комплекта (по умолчанию да)")
+    s.add_argument("--waitable", action=argparse.BooleanOptionalAction, default=True,
+                   help="SimulateWaitableObject против зависания при старте FG (по умолчанию да)")
+    s.add_argument("--log", action="store_true", help="включить OptiScaler.log")
     s.add_argument("--overwrite", action="store_true",
                    help="перезаписывать DLL игры (FSR/XeSS) файлами OptiScaler")
     s.add_argument("--no-launch", action="store_true", help="не трогать параметры запуска Steam")
@@ -325,7 +317,7 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("source", nargs="?", help="свой .zip или папка (иначе — последний релиз)")
     s.set_defaults(fn=cmd_dlssg_fetch)
 
-    s = sub.add_parser("dlssg-install", help="нативный DLSS FG на RTX 20/30 (dlssg_for_sm86)")
+    s = sub.add_parser("dlssg-install", help="нативный DLSS FG на RTX 20/30 (заменяет OptiScaler)")
     s.add_argument("game")
     s.add_argument("--frames", default="2x", choices=["2x", "3x", "4x", "6x"])
     s.add_argument("--engine", default="DLSS", choices=list(dlssg_sm86.ENGINES))
