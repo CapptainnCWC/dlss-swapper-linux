@@ -164,6 +164,11 @@ def _api(exe: Path | None, target: Path, names: set[str]) -> str:
     return "?"
 
 
+def _dlssg_310(game_dir: Path) -> bool:
+    from .dlssgopen import runtime_ok
+    return runtime_ok(game_dir)[0]
+
+
 def analyze(game_dir: Path, gpu: GpuInfo, dlls: list | None = None) -> Analysis:
     game_dir = Path(game_dir)
     state = load_state(game_dir)
@@ -213,6 +218,10 @@ def analyze(game_dir: Path, gpu: GpuInfo, dlls: list | None = None) -> Analysis:
     if gpu.native_dlss_fg and has("dlss_fg"):
         a.method = "none"
         a.reasons.insert(0, "У вас RTX 40/50 и в игре есть DLSS FG — он работает без модов")
+    elif has("dlss_fg") and a.api == "DX12" and gpu.is_nvidia and _dlssg_310(game_dir):
+        a.method = "dlssg_open"
+        a.reasons.insert(0, "В игре есть DLSS FG 310.x — можно запустить настоящий DLSS-G NVIDIA на этой карте "
+                            "(dlssg-open). Если не заработает — FSR FG через OptiScaler")
     elif has("dlss_fg") and a.api == "DX12":
         a.method = "optifg"
         a.reasons.insert(0, "В игре есть DLSS FG — OptiScaler разблокирует его, кадры генерирует FSR FG")
@@ -233,9 +242,9 @@ def analyze(game_dir: Path, gpu: GpuInfo, dlls: list | None = None) -> Analysis:
 
     if a.game_fsr31 and a.method in ("optifg", "upscaler"):
         a.reasons.append("Свой FSR 3.1 игры будет использован для FG (стабильнее FSR 4 из комплекта под Proton)")
-    if has("dlss_fg") and not gpu.native_dlss_fg and gpu.is_nvidia:
-        a.warnings.append("dlssg_for_sm86 (настоящий DLSS FG) под Proton пока не работает: "
-                          "в логе мода «Missing cuInit» — нет доступа к CUDA")
+    if has("dlss_fg") and not gpu.native_dlss_fg and gpu.is_nvidia and not _dlssg_310(game_dir):
+        a.warnings.append("DLSS-G в игре старее 310.x — для настоящего DLSS FG замените nvngx_dlssg.dll "
+                          "на 310.x в разделе «Апскейлеры»")
     if a.anti_cheat:
         a.warnings.append("Античит: " + ", ".join(a.anti_cheat[:3]) + " — не используйте моды онлайн")
     others = [p.name for p in target.glob("*.exe") if exe and p != exe and "dx11" in p.name.lower()]

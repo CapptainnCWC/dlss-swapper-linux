@@ -48,12 +48,12 @@ git clone https://github.com/CapptainnCWC/dlss-swapper-linux && cd dlss-swapper-
 
 | Способ | Что делает | Когда выбирать |
 |---|---|---|
+| **DLSS FG (NVIDIA)** | Настоящий DLSS-G игры на RTX 20/30 через [dlssg-open](https://github.com/ProfessorTee/dlssg-open) | NVIDIA RTX 20/30, в игре DLSS FG 310.x. Проверено: Black Myth: Wukong, RTX 3060 |
 | Только апскейлер | OptiScaler без FG | Нужен другой апскейлер или настройки DLSS |
 | FSR FG (OptiFG) | DLSS FG игры → FSR FG через OptiScaler | В игре есть DLSS FG, видеокарта без RTX 40 |
 | FSR3 FG (Nukem) | DLSS FG игры → dlssg-to-fsr3 | То же, другая реализация |
 | XeSS FG | DLSS FG игры → XeSS FG | То же |
 | Из апскейлера | OptiScaler генерирует кадры из данных DLSS | В игре нет DLSS FG (например, The Last of Us Part I) |
-| DLSS FG (sm86) | Настоящий DLSS-G через [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86) | В игре есть DLSS FG, экспериментально |
 
 Что выяснилось при отладке под Proton (RTX 3060, The Last of Us Part I) и выставлено по умолчанию:
 - **FSR FG из игры.** Если в игре есть свой FSR 3.1 (`amd_fidelityfx_dx12.dll`), OptiScaler берёт его, а файлы FSR 4 SDK из комплекта не копируются: FG из FSR 4 SDK ронял видеокарту (Xid 32).
@@ -62,9 +62,23 @@ git clone https://github.com/CapptainnCWC/dlss-swapper-linux && cd dlss-swapper-
 - **Подмена архитектуры** `DXVK_NVAPI_GPU_ARCH=AD100` выключена. С ней DLSS запускал на RTX 30 ядра для RTX 40, и видеокарта падала (Xid 13/32). Включайте её только в режимах, где игре нужно показать переключатель DLSS FG.
 - Если игра зависает при открытии меню OptiScaler (Insert), а FG работает, играйте без меню: FG уже включён в `OptiScaler.ini`.
 
-Для OptiScaler в параметры запуска добавляется `WINEDLLOVERRIDES=dxgi=n,b PROTON_ENABLE_NVAPI=1`, для dlssg_for_sm86 — `WINEDLLOVERRIDES=version=n,b PROTON_ENABLE_NVAPI=1`. При удалении приложение убирает только то, что добавило само, а логи модов оставляет.
+### Настоящий DLSS FG (NVIDIA) на RTX 20/30
+NVIDIA DLSS-G 310.x уже содержит ядра для Ampere (`sm_86`), а под Proton ему мешают три вещи. Пресет «DLSS FG (NVIDIA)» закрывает все три по схеме [dlssg-open](https://github.com/ProfessorTee/dlssg-open) (MIT):
 
-**dlssg_for_sm86.** Скачивается релиз автора (MIT), SHA-256 каждого файла проверяется по его `manifest.json`. Нужна игра со встроенным DLSS FG (`sl.dlss_g.dll`) и драйвер R580+. Под Proton мод может не найти CUDA: в логе `<папка exe>/dlssg_sm86/logs/dlssg_sm86.log` будет `Missing cuInit`.
+1. **CUDA.** В Proton `nvcuda.dll` — пустая заглушка, а NGX спрашивает у CUDA устройство, архитектуру и LUID. Ставится `nvcuda-lite` из dlssg-open.
+2. **Ядра.** Runtime отдаёт драйверу ядра `sm_89`, которые vkd3d-proton не может загрузить на Ampere. Пропатченный DXVK-NVAPI (`nvapi64.dll` из dlssg-open) на лету перенацеливает PTX на `sm_86` и подставляет `sm_86`-ядра, которые NVIDIA уже вшила в тот же runtime.
+3. **Проверки архитектуры и HAGS.** Через `DXVK_NVAPI_GPU_ARCH=AD100 NVCUDA_LITE_CC=8.9 DXVK_NVAPI_CUBIN_RETARGET_SM=<sm>`, а в реестр префикса пишется `HwSchMode=2`: некоторые игры (Wukong) проверяют HAGS через реестр.
+
+Upstream ставит эти файлы прямо в Proton, что затрагивает все игры и сбрасывается при обновлении Proton. dlss-swapper-linux вместо этого создаёт **инструмент совместимости Steam** «<Proton> + DLSS FG (dlss-swapper)». Это обёртка над вашим Proton, которая назначается только этой игре и перед каждым запуском кладёт `nvcuda.dll` и `nvapi64.dll` в её префикс. Сам Proton не меняется. При удалении возвращаются прежний Proton, параметры запуска и оригинальные файлы префикса.
+
+- Нужен DLSS-G 310.x. Если в игре старее, замените `nvngx_dlssg.dll` в разделе «Апскейлеры».
+- Переключатель «Индикатор DLSS-G» включает оверлей NVIDIA, по которому видно, что генерация идёт.
+- Steam должен быть закрыт, чтобы приложение могло назначить инструмент совместимости. После первого назначения Steam может докачать кэш шейдеров.
+- В CLI: `dlss-swapper-linux real-fg "Игра" [--indicator]`.
+
+Мод dlssg_for_sm86 под Proton не работает (DXVK-NVAPI не реализует `NvAPI_D3D12_CreateCuModule`) и в интерфейсе скрыт.
+
+Для OptiScaler в параметры запуска добавляется `WINEDLLOVERRIDES=dxgi=n,b PROTON_ENABLE_NVAPI=1`, для dlssg_for_sm86 — `WINEDLLOVERRIDES=version=n,b PROTON_ENABLE_NVAPI=1`. При удалении приложение убирает только то, что добавило само, а логи модов оставляет.
 
 > ⚠ Steam перезаписывает свой конфиг при выходе, поэтому **закройте Steam**, прежде чем записывать параметры запуска. Если Steam открыт, строка копируется в буфер обмена — вставьте её вручную: *Свойства игры → Параметры запуска*.
 
@@ -103,6 +117,7 @@ dlss-swapper-linux --dir "/games/MyGame" show "/games/MyGame"   # игра вн�
 
 - [DLSS Swapper](https://github.com/beeradmoore/dlss-swapper): манифест и зеркало DLL
 - [OptiScaler](https://github.com/optiscaler/OptiScaler)
+- [dlssg-open](https://github.com/ProfessorTee/dlssg-open) (ProfessorTee)
 - [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86) (sdli1995)
 - [dlssg-to-fsr3](https://github.com/Nukem9/dlssg-to-fsr3) (Nukem9)
 - [fakenvapi](https://github.com/optiscaler/fakenvapi), [DXVK-NVAPI](https://github.com/jp7677/dxvk-nvapi)

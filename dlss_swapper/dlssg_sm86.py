@@ -148,6 +148,9 @@ class Options:
     preset: str = "A"
     super_resolution: str = "Off"
     verbose_log: bool = False
+    # Proton's nvcuda.dll is an empty stub -> "Missing cuInit". Ship a tiny nvcuda.dll that answers
+    # the mod's driver check (cuInit + cuDriverGetVersion); kernels still run through NVAPI.
+    fake_cuda: bool = True
 
 
 @dataclass
@@ -169,8 +172,15 @@ def installed(game_dir: Path) -> dict:
     return load_state(game_dir).get(STATE_KEY, {})
 
 
-def launch_env(opts: Options) -> tuple[dict[str, str], dict[str, str]]:
-    return {"PROTON_ENABLE_NVAPI": "1"}, {opts.proxy[:-4]: "n,b"}
+def wine_path(p: Path) -> str:
+    return "Z:" + str(p).replace("/", "\\")
+
+
+def launch_env(opts: Options, target_dir: Path | None = None) -> tuple[dict[str, str], dict[str, str]]:
+    # nvcuda is handled by the per-game compatibility tool (compat.py): Proton forces
+    # "nvcuda=b" after the user's overrides, so launch options cannot change it.
+    ov = {opts.proxy[:-4]: "n,b"}
+    return {"PROTON_ENABLE_NVAPI": "1"}, ov
 
 
 def install(game_dir: Path, target_dir: Path, bundle: Bundle, opts: Options) -> Result:

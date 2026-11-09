@@ -13,7 +13,7 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import __version__, core, detect, dlssg_sm86, gpu, optiscaler, steam, swapper, updater  # noqa: E402
+from . import __version__, core, detect, dlssg_sm86, dlssgopen, gpu, optiscaler, steam, swapper, updater  # noqa: E402
 from .library import DLL_TYPES, Library  # noqa: E402
 
 APP_ID = "io.github.capptainncwc.DlssSwapperLinux"
@@ -34,6 +34,10 @@ CSS = b"""
 
 def _strings(items: list[str]) -> Gtk.StringList:
     return Gtk.StringList.new(items)
+
+
+def load_state_entry(g, key: str, rel: str | None) -> dict:
+    return (core.load_state(g.path).get(key) or {}).get(rel or ".", {})
 
 
 def _folder_label(rel: str | None) -> str:
@@ -491,14 +495,23 @@ class Window(Adw.ApplicationWindow):
         method_now, rel_now, saved = core.current_fg(g)
         own = [d for d in self.dlls if not d.owned_by_optiscaler]
         has_fg = any(d.kind == "dlss_g" for d in own)
-        o = saved if method_now and method_now != "native" else {}
+        o = saved if method_now and method_now not in ("native", "dlssg_open") else {}
         n = saved if method_now == "native" else {}
 
         grp = Adw.PreferencesGroup(title="Frame Generation", description=an.reasons[0] if an.reasons else "")
         grp.add(self._analysis_row(an))
 
         if method_now:
-            if method_now == "native":
+            if method_now == "dlssg_open":
+                v = load_state_entry(g, dlssgopen.STATE_KEY, rel_now)
+                comp = (core.load_state(g.path).get("compat") or {})
+                sub = f"dlssg-open {v.get('version', '?')} · Proton-обёртка · sm {v.get('options', {}).get('sm', '?')}"
+                files = (("Открыть лог Proton", "text-x-generic-symbolic",
+                          Path.home() / "snap/steam/common" / f"steam-{g.appid}.log"
+                          if (Path.home() / "snap/steam/common").is_dir() else Path.home() / f"steam-{g.appid}.log"),)
+                if comp.get("tool"):
+                    sub += f" · {comp['tool']}"
+            elif method_now == "native":
                 v = dlssg_sm86.installed(g.path)[rel_now]
                 sub = f"dlssg_for_sm86 {v['version']} · {_folder_label(rel_now)} · {v['proxy']}"
                 files = (("Открыть dlssg_sm86.ini", "document-edit-symbolic", g.path / rel_now / "dlssg_sm86.ini"),
@@ -510,7 +523,7 @@ class Window(Adw.ApplicationWindow):
                     sub += " · FSR игры"
                 files = (("Открыть OptiScaler.ini", "document-edit-symbolic", g.path / rel_now / "OptiScaler.ini"),
                          ("Открыть лог", "text-x-generic-symbolic", g.path / rel_now / "OptiScaler.log"))
-            st = Adw.ActionRow(title=f"Установлено: {core.FG_METHODS.get(method_now, method_now)}", subtitle=sub)
+            st = Adw.ActionRow(title=f"Установлено: {core.method_label(method_now)}", subtitle=sub)
             st.add_prefix(Gtk.Image(icon_name="emblem-ok-symbolic"))
             for tip, icon, path in files:
                 b = Gtk.Button(icon_name=icon, valign=Gtk.Align.CENTER, tooltip_text=tip)
@@ -520,9 +533,12 @@ class Window(Adw.ApplicationWindow):
                 st.add_suffix(b)
             grp.add(st)
 
-        self._methods = [m for m in core.FG_METHODS if m != "native" or self.gpu.is_nvidia]
+        self._methods = [m for m in core.FG_METHODS
+                         if m != "dlssg_open" or (self.gpu.is_nvidia and not self.gpu.native_dlss_fg)]
+        if method_now == "native":
+            self._methods.append("native")
         default = an.method
-        self.w_method = _combo("Способ", [core.FG_METHODS[m] for m in self._methods],
+        self.w_method = _combo("Способ", [core.method_label(m) for m in self._methods],
                                _idx(self._methods, method_now or default))
         grp.add(self.w_method)
 
@@ -583,6 +599,10 @@ class Window(Adw.ApplicationWindow):
         self.dg_sr = _combo("Ускорение DLSS SR", list(dlssg_sm86.SR_MODES.values()),
                             _idx(self._dg_sr, n.get("super_resolution")), "INT8-ядра для пресетов L/M, +180 МБ")
         self.dg_verbose = _switch("Подробный лог", n.get("verbose_log", True), "Нужен для диагностики")
+        no = saved if method_now == "dlssg_open" else {}
+        self.w_indicator = _switch("Индикатор DLSS-G на экране", no.get("indicator", False),
+                                   "Оверлей NVIDIA в углу: видно, что кадры генерирует DLSS-G")
+        grp.add(self.w_indicator)
         opti_rows = [self.w_bundle, self.w_proxy, self.w_gamefsr, self.w_waitable, self.w_hudfix,
                      self.w_spoof, self.w_overwrite, self.w_log]
         native_rows = [self.dg_bundle, self.dg_proxy, self.dg_sr, self.dg_verbose]
@@ -593,17 +613,22 @@ class Window(Adw.ApplicationWindow):
         def update(*_):
             m = self._methods[self.w_method.get_selected()]
             native = m == "native"
+            opti = m not in ("native", "dlssg_open")
             for r in [self.w_up, self.w_preset] + opti_rows:
-                r.set_visible(not native)
+                r.set_visible(opti)
             for r in [self.dg_frames, self.dg_engine, self.dg_preset] + native_rows:
                 r.set_visible(native)
-            fg_on = m not in ("none", "native")
+            self.w_indicator.set_visible(m == "dlssg_open")
+            fg_on = opti and m != "none"
             for r in (self.w_waitable, self.w_hudfix):
                 r.set_sensitive(fg_on)
             self.w_spoof.set_sensitive(self.gpu.is_nvidia and optiscaler.uses_dlssg_input(m))
-            hint = core.FG_METHOD_HINTS[m]
-            if m in ("optifg", "nukems", "xefg", "native") and not has_fg:
+            hint = core.FG_METHOD_HINTS.get(m, core.method_label(m))
+            if m in ("optifg", "nukems", "xefg", "native", "dlssg_open") and not has_fg:
                 hint = "В игре нет DLSS FG — этот способ не сработает, выберите «Из апскейлера»"
+            elif m == "dlssg_open":
+                ok, why = dlssgopen.runtime_ok(g.path)
+                hint = (hint + ". " + why) if ok else why
             self.w_method.set_subtitle(hint)
 
         self.w_method.connect("notify::selected", update)
@@ -625,7 +650,7 @@ class Window(Adw.ApplicationWindow):
         return grp
 
     def _analysis_row(self, an) -> Adw.ExpanderRow:
-        rec = core.FG_METHODS.get(an.method, an.method)
+        rec = core.method_label(an.method)
         title = f"Рекомендуется: {rec}" if an.supported else "Моды здесь не помогут"
         row = Adw.ExpanderRow(title=title, subtitle=" · ".join([an.engine, an.api] + an.feature_labels))
         row.add_prefix(Gtk.Image(icon_name="system-search-symbolic"))
@@ -659,6 +684,7 @@ class Window(Adw.ApplicationWindow):
             preset=self._dg_presets[self.dg_preset.get_selected()],
             super_resolution=self._dg_sr[self.dg_sr.get_selected()], verbose_log=self.dg_verbose.get_active())
         bi, di = self.w_bundle.get_selected(), self.dg_bundle.get_selected()
+        indicator = self.w_indicator.get_active()
 
         def opti_bundle():
             return self._bundles[bi] if bi < len(self._bundles) else optiscaler.download_latest(self.progress_cb)
@@ -668,20 +694,24 @@ class Window(Adw.ApplicationWindow):
                     else dlssg_sm86.download_latest(self.progress_cb))
 
         def fn():
-            return core.setup_fg(g, target, method, opti_opts, opti_bundle, dg_opts, dg_bundle, write)
+            return core.setup_fg(g, target, method, opti_opts, opti_bundle, dg_opts, dg_bundle, write,
+                                 dlssg_indicator=indicator,
+                                 dlssgopen_bundle=lambda: (dlssgopen.local_bundles() or
+                                                           [dlssgopen.download_latest(self.progress_cb)])[0])
 
         def done(r):
             lu = r.launch
-            msg = [f"{core.FG_METHODS[r.method]} · версия {r.version} · файлов: {r.placed}"]
+            msg = [f"{core.method_label(r.method)} · версия {r.version}" + (f" · файлов: {r.placed}" if r.placed else "")]
             msg += [f"⚠ {w}" for w in r.warnings]
+            msg += [f"• {n}" for n in (r.notes or [])]
             msg.append(f"\nПараметры запуска:\n{lu.new or '(пусто)'}")
             if lu.written:
                 msg.append("✓ Записаны в Steam")
             else:
                 self._copy(lu.new)
                 msg.append(("⚠ " + lu.error + "\n" if lu.error else "") + "Строка скопирована в буфер обмена")
-            if r.method == "native":
-                msg.append("\nВ игре включите DLSS Frame Generation.")
+            if r.method in ("native", "dlssg_open"):
+                msg.append("\nВ игре включите DLSS и DLSS Frame Generation.")
             elif r.method != "none":
                 msg.append("\nВ игре включите DLSS. Меню OptiScaler — Insert.")
             self.alert("Готово", "\n".join(msg))

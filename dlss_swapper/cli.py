@@ -5,7 +5,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import core, detect, dlssg_sm86, gpu, optiscaler, steam, swapper
+from . import core, detect, dlssg_sm86, dlssgopen, gpu, optiscaler, steam, swapper
 from .library import DLL_TYPES, Library
 
 
@@ -149,9 +149,11 @@ def _target(a, g) -> Path:
 
 
 def _print_setup(r: core.FgSetupResult) -> None:
-    print(f"{core.FG_METHODS[r.method]}: версия {r.version}, {r.target} ({r.placed} файлов)")
+    print(f"{core.method_label(r.method)}: версия {r.version}, {r.target} ({r.placed} файлов)")
     for w in r.warnings:
         print(f"  ⚠ {w}")
+    for n in r.notes or []:
+        print(f"  • {n}")
     lu = r.launch
     print(f"\nПараметры запуска Steam:\n  {lu.new or '(пусто)'}")
     if lu.written:
@@ -176,7 +178,7 @@ def cmd_detect(a) -> None:
     print(f"  найдено: {', '.join(an.feature_labels) or 'нет DLSS/FSR/XeSS'}")
     if an.foreign_proxies:
         print(f"  заняты имена: {', '.join(an.foreign_proxies)}")
-    print(f"\nРекомендация: {core.FG_METHODS[an.method]} (--fg {an.method}), прокси {an.proxy}")
+    print(f"\nРекомендация: {core.method_label(an.method)} (--fg {an.method}), прокси {an.proxy}")
     for r in an.reasons:
         print(f"  + {r}")
     for w in an.warnings:
@@ -190,7 +192,7 @@ def cmd_opti_install(a) -> None:
     an = detect.analyze(g.path, info)
     if a.fg == "auto":
         a.fg = an.method
-        print(f"Автовыбор: {core.FG_METHODS[a.fg]} — {an.reasons[0] if an.reasons else ''}")
+        print(f"Автовыбор: {core.method_label(a.fg)} — {an.reasons[0] if an.reasons else ''}")
     if a.proxy is None:
         a.proxy = an.proxy
     if a.target is None and an.target != g.path:
@@ -249,6 +251,18 @@ def cmd_dlssg_install(a) -> None:
     rel = str(target.relative_to(g.path)) if target != g.path else "."
     print(f"\nЛог мода: {dlssg_sm86.log_path(g.path, rel)}")
     print("В игре включите DLSS Frame Generation.")
+
+
+def cmd_real_fg(a) -> None:
+    g = _find_game(a.game, a.dir)
+    if not gpu.detect().is_nvidia:
+        sys.exit("Настоящий DLSS FG работает только на NVIDIA RTX.")
+    r = core.setup_fg(g, g.path, "dlssg_open", optiscaler.InstallOptions(), lambda: None,
+                      dlssg_sm86.Options(), lambda: None, write=not a.no_launch,
+                      dlssgopen_bundle=lambda: (dlssgopen.local_bundles() or [dlssgopen.download_latest(_progress)])[0],
+                      dlssg_indicator=a.indicator)
+    _print_setup(r)
+    print("\nВ игре включите DLSS и DLSS Frame Generation.")
 
 
 def cmd_dlssg_remove(a) -> None:
@@ -358,6 +372,12 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--verbose", action="store_true", help="подробный лог (Level=2)")
     s.add_argument("--no-launch", action="store_true")
     s.set_defaults(fn=cmd_dlssg_install)
+
+    s = sub.add_parser("real-fg", help="настоящий DLSS FG на RTX 20/30 (dlssg-open, Proton-обёртка)")
+    s.add_argument("game")
+    s.add_argument("--indicator", action="store_true", help="показывать индикатор DLSS-G NVIDIA")
+    s.add_argument("--no-launch", action="store_true")
+    s.set_defaults(fn=cmd_real_fg)
 
     s = sub.add_parser("dlssg-remove", help="удалить dlssg_for_sm86")
     s.add_argument("game")
