@@ -532,6 +532,19 @@ class Window(Adw.ApplicationWindow):
                           else self.toast("Файл появится после запуска игры"))
                 st.add_suffix(b)
             grp.add(st)
+            tool, assigned = core.wrapper_status(g)
+            if tool and not assigned:
+                warn = Adw.ActionRow(title="Proton-обёртка не назначена",
+                                     subtitle="Без неё игра упадёт при включении FG. Закройте Steam и нажмите "
+                                              "«Назначить» или выберите в Свойствах игры → Совместимость "
+                                              "«… + DLSS FG (dlss-swapper)»")
+                warn.add_prefix(Gtk.Image(icon_name="dialog-warning-symbolic"))
+                warn.add_css_class("error")
+                b = Gtk.Button(label="Назначить", valign=Gtk.Align.CENTER)
+                b.add_css_class("suggested-action")
+                b.connect("clicked", self.on_assign_wrapper)
+                warn.add_suffix(b)
+                grp.add(warn)
 
         self._methods = [m for m in core.FG_METHODS
                          if m != "dlssg_open" or (self.gpu.is_nvidia and not self.gpu.native_dlss_fg)]
@@ -718,19 +731,65 @@ class Window(Adw.ApplicationWindow):
             self.show_game()
             self._refresh_row(g)
 
-        self.run_bg(fn, done, "Установка…")
+        self._with_steam_closed(g, write, fn, done, "Установка…")
+
+    # ------------------------------------------------------------ Steam must be closed to write its config
+    def _with_steam_closed(self, g, needed: bool, fn, done, label: str) -> None:
+        """Run fn in the background; if Steam is open and its config must be written, offer to restart it."""
+        if not needed or g.source not in ("steam", "shortcut") or not steam.steam_running():
+            self.run_bg(fn, done, label)
+            return
+        d = Adw.AlertDialog(
+            heading="Нужно перезапустить Steam",
+            body=("Steam перезаписывает свои настройки при выходе, поэтому параметры запуска и "
+                  "Proton-обёртку можно записать только при закрытом Steam.\n\n"
+                  "dlss-swapper закроет Steam, применит всё и запустит его снова. Игры в Steam должны быть закрыты."))
+        d.add_response("cancel", "Отмена")
+        d.add_response("files", "Только файлы")
+        d.add_response("restart", "Перезапустить Steam")
+        d.set_response_appearance("restart", Adw.ResponseAppearance.SUGGESTED)
+        d.set_default_response("restart")
+
+        def resp(_d, r):
+            if r == "files":
+                self.run_bg(fn, done, label)
+            elif r == "restart":
+                def wrapped():
+                    if not steam.shutdown_steam(g.steam_root):
+                        raise RuntimeError("Steam не закрылся за 45 секунд — закройте его вручную и повторите")
+                    try:
+                        return fn()
+                    finally:
+                        steam.start_steam(g.steam_root)
+                self.run_bg(wrapped, done, "Перезапуск Steam и установка…")
+
+        d.connect("response", resp)
+        d.present(self)
+
+    def on_assign_wrapper(self, _b) -> None:
+        g = self.current
+
+        def done(tool):
+            self.toast(f"Назначено: {tool}")
+            self.show_game()
+
+        self._with_steam_closed(g, True, lambda: core.assign_wrapper(g), done, "Назначение обёртки…")
 
     def on_remove_fg(self, _b) -> None:
         g = self.current
-        lu = core.remove_all_fg(g, write=self.w_writelaunch.get_active())
-        if lu and not lu.written and lu.new != lu.old:
-            self._copy(lu.new)
-            self.alert("Удалено", (lu.error or "") +
-                       f"\n\nВерните параметры запуска вручную (скопировано):\n{lu.new or '(пусто)'}")
-        else:
-            self.toast("Удалено, логи сохранены")
-        self.show_game()
-        self._refresh_row(g)
+        write = self.w_writelaunch.get_active()
+
+        def done(lu):
+            if lu and not lu.written and lu.new != lu.old:
+                self._copy(lu.new)
+                self.alert("Удалено", (lu.error or "") +
+                           f"\n\nВерните параметры запуска вручную (скопировано):\n{lu.new or '(пусто)'}")
+            else:
+                self.toast("Удалено, логи сохранены")
+            self.show_game()
+            self._refresh_row(g)
+
+        self._with_steam_closed(g, write, lambda: core.remove_all_fg(g, write=write), done, "Удаление…")
 
     def on_save_launch(self, entry) -> None:
         try:

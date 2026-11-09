@@ -13,6 +13,7 @@ copies into the prefix. Proton itself is not modified.
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 import shutil
@@ -38,6 +39,14 @@ LINK_NOTE = {link_note!r}
 
 
 def wanted():
+    # 1) per-game config written by the app into this tool, keyed by the prefix's appid
+    appid = os.path.basename(os.environ.get("STEAM_COMPAT_DATA_PATH", "").rstrip("/"))
+    try:
+        with open(os.path.join(TOOL, "games", appid + ".json")) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        pass
+    # 2) fallback: the game's own state file
     game = os.environ.get("STEAM_COMPAT_INSTALL_PATH", "")
     try:
         with open(os.path.join(game, ".dlss-swapper-linux.json")) as f:
@@ -190,6 +199,25 @@ def install_tool(steam_root: Path, base: Path) -> str:
     script.write_text(WRAPPER.format(base=str(base), base_name=base.name, link_note=LINK_NOTE))
     script.chmod(0o755)
     return name
+
+
+def tool_dir(steam_root: Path, tool: str) -> Path:
+    return steam_root / "compatibilitytools.d" / tool
+
+
+def set_game_runtime(steam_root: Path, tool: str, appid: str, runtime: dict | None) -> None:
+    """Tell the wrapper which runtime files this game needs (None removes the entry)."""
+    d = tool_dir(steam_root, tool) / "games"
+    f = d / f"{appid}.json"
+    if runtime:
+        d.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(runtime))
+    else:
+        f.unlink(missing_ok=True)
+
+
+def wrapper_assigned(game: Game, tool: str | None) -> bool:
+    return bool(tool and game.steam_root and get_tool(game.steam_root, game.appid) == tool)
 
 
 def resolve_base(steam_root: Path, current: str | None) -> Path | None:

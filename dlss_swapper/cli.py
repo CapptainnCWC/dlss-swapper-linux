@@ -253,11 +253,31 @@ def cmd_dlssg_install(a) -> None:
     print("В игре включите DLSS Frame Generation.")
 
 
+class _SteamClosed:
+    """Context manager for --restart-steam: close Steam, apply, start it again."""
+    def __init__(self, g, enabled: bool):
+        self.g, self.enabled, self.restart = g, enabled, False
+
+    def __enter__(self):
+        if self.enabled and steam.steam_running():
+            print("Закрываю Steam…")
+            if not steam.shutdown_steam(self.g.steam_root):
+                sys.exit("Steam не закрылся за 45 секунд")
+            self.restart = True
+        return self
+
+    def __exit__(self, *exc):
+        if self.restart:
+            print("Запускаю Steam…")
+            steam.start_steam(self.g.steam_root)
+
+
 def cmd_real_fg(a) -> None:
     g = _find_game(a.game, a.dir)
     if not gpu.detect().is_nvidia:
         sys.exit("Настоящий DLSS FG работает только на NVIDIA RTX.")
-    r = core.setup_fg(g, g.path, "dlssg_open", optiscaler.InstallOptions(), lambda: None,
+    with _SteamClosed(g, a.restart_steam):
+      r = core.setup_fg(g, g.path, "dlssg_open", optiscaler.InstallOptions(), lambda: None,
                       dlssg_sm86.Options(), lambda: None, write=not a.no_launch,
                       dlssgopen_bundle=lambda: (dlssgopen.local_bundles() or [dlssgopen.download_latest(_progress)])[0],
                       dlssg_indicator=a.indicator)
@@ -376,6 +396,8 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("real-fg", help="настоящий DLSS FG на RTX 20/30 (dlssg-open, Proton-обёртка)")
     s.add_argument("game")
     s.add_argument("--indicator", action="store_true", help="показывать индикатор DLSS-G NVIDIA")
+    s.add_argument("--restart-steam", action="store_true",
+                   help="закрыть Steam, применить всё и запустить Steam снова")
     s.add_argument("--no-launch", action="store_true")
     s.set_defaults(fn=cmd_real_fg)
 

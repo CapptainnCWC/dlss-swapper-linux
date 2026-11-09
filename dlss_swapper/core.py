@@ -116,6 +116,8 @@ def _undo_compat(game: Game, notes: list) -> None:
     save_state(game.path, st)
     if not c:
         return
+    if game.steam_root and c.get("tool"):
+        compat.set_game_runtime(game.steam_root, c["tool"], game.appid, None)
     compat.restore_prefix(game)
     if game.steam_root and compat.get_tool(game.steam_root, game.appid) == c.get("tool"):
         try:
@@ -142,6 +144,7 @@ def _setup_compat(game: Game, runtime: dict, notes: list) -> None:
     st["compat"] = {"tool": tool, "previous": previous, "base": str(base)}
     st["proton_runtime"] = runtime
     save_state(game.path, st)
+    compat.set_game_runtime(game.steam_root, tool, game.appid, runtime)
     placed = True
     for kind in ("nvcuda", "nvapi64"):
         if runtime.get(kind):
@@ -151,8 +154,9 @@ def _setup_compat(game: Game, runtime: dict, notes: list) -> None:
             compat.set_tool(game.steam_root, game.appid, tool)
             notes.append(f"Игре назначен инструмент совместимости «{base.name} + DLSS FG (dlss-swapper)»")
         except steam.SteamRunningError:
-            notes.append(f"Steam открыт: перезапустите Steam и в Свойствах игры → Совместимость выберите "
-                         f"«{base.name} + DLSS FG (dlss-swapper)»")
+            notes.append(f"⚠ ОБЁРТКА НЕ НАЗНАЧЕНА (Steam открыт). Без неё игра упадёт при включении FG. "
+                         f"Закройте Steam и нажмите «Назначить» в приложении или выберите в Свойствах игры → "
+                         f"Совместимость «{base.name} + DLSS FG (dlss-swapper)»")
     if not placed:
         notes.append("Префикс игры ещё не создан: файлы положатся при первом запуске")
 
@@ -186,6 +190,22 @@ def _uninstall_all(game: Game, cur: str, notes: list, keep_compat: bool = False)
     if not keep_compat:
         _undo_compat(game, notes)
     return cur, removed
+
+
+def wrapper_status(game: Game) -> tuple[str | None, bool]:
+    """(tool name the game needs, whether it is selected in Steam) for wrapper-based methods."""
+    c = load_state(game.path).get("compat") or {}
+    tool = c.get("tool")
+    return tool, compat.wrapper_assigned(game, tool)
+
+
+def assign_wrapper(game: Game) -> str:
+    tool, ok = wrapper_status(game)
+    if not tool:
+        raise RuntimeError("Для этой игры обёртка не нужна")
+    if not ok:
+        compat.set_tool(game.steam_root, game.appid, tool)
+    return tool
 
 
 def remove_all_fg(game: Game, write: bool = True) -> LaunchUpdate | None:

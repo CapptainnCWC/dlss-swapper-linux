@@ -183,6 +183,46 @@ def steam_running() -> bool:
         return False
 
 
+def steam_command(root: Path | None = None) -> list[str] | None:
+    """Command that starts the user's Steam client (snap, flatpak or native)."""
+    root_s = str(root or "")
+    if "/snap/steam/" in root_s and shutil.which("snap"):
+        return ["snap", "run", "steam"]
+    if "com.valvesoftware.Steam" in root_s and shutil.which("flatpak"):
+        return ["flatpak", "run", "com.valvesoftware.Steam"]
+    for exe in ("steam", "/usr/games/steam", "/snap/bin/steam"):
+        if shutil.which(exe):
+            return [shutil.which(exe)]
+    return None
+
+
+def shutdown_steam(root: Path | None = None, timeout: float = 45.0) -> bool:
+    """Ask Steam to exit cleanly (it saves its config on exit) and wait for it."""
+    cmd = steam_command(root)
+    if not steam_running():
+        return True
+    if not cmd:
+        return False
+    subprocess.Popen(cmd + ["-shutdown"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+    end = time.time() + timeout
+    while time.time() < end:
+        if not steam_running():
+            time.sleep(1.5)  # let it finish writing files
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def start_steam(root: Path | None = None) -> bool:
+    cmd = steam_command(root)
+    if not cmd:
+        return False
+    subprocess.Popen(cmd + ["-silent"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+    return True
+
+
 def _localconfig(root: Path, uid: str) -> Path:
     return root / "userdata" / uid / "config/localconfig.vdf"
 
