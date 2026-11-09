@@ -5,7 +5,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import core, dlssg_sm86, gpu, optiscaler, steam, swapper
+from . import core, detect, dlssg_sm86, gpu, optiscaler, steam, swapper
 from .library import DLL_TYPES, Library
 
 
@@ -168,10 +168,33 @@ def _print_removed(lu) -> None:
             print(f"  ⚠ {lu.error}")
 
 
+def cmd_detect(a) -> None:
+    g = _find_game(a.game, a.dir)
+    an = detect.analyze(g.path, gpu.detect())
+    print(f"{g.name}\n  движок: {an.engine}, API: {an.api}" + (f", exe: {an.exe.name}" if an.exe else ""))
+    print(f"  папка exe: {an.target.relative_to(g.path) if an.target != g.path else '.'}")
+    print(f"  найдено: {', '.join(an.feature_labels) or 'нет DLSS/FSR/XeSS'}")
+    if an.foreign_proxies:
+        print(f"  заняты имена: {', '.join(an.foreign_proxies)}")
+    print(f"\nРекомендация: {core.FG_METHODS[an.method]} (--fg {an.method}), прокси {an.proxy}")
+    for r in an.reasons:
+        print(f"  + {r}")
+    for w in an.warnings:
+        print(f"  ⚠ {w}")
+
+
 def cmd_opti_install(a) -> None:
     g = _find_game(a.game, a.dir)
     info = gpu.detect()
     print(f"GPU: {info.name}")
+    an = detect.analyze(g.path, info)
+    if a.fg == "auto":
+        a.fg = an.method
+        print(f"Автовыбор: {core.FG_METHODS[a.fg]} — {an.reasons[0] if an.reasons else ''}")
+    if a.proxy is None:
+        a.proxy = an.proxy
+    if a.target is None and an.target != g.path:
+        a.target = str(an.target)
     if info.native_dlss_fg and a.fg != "none":
         print("  У вас RTX 40+: DLSS FG работает нативно, разблокировка не нужна.")
     ac = swapper.anti_cheat(g.path)
@@ -254,6 +277,10 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--fast", action="store_true", help="не сканировать файлы")
     s.set_defaults(fn=cmd_list)
 
+    s = sub.add_parser("detect", help="анализ файлов игры и рекомендация, что ставить")
+    s.add_argument("game")
+    s.set_defaults(fn=cmd_detect)
+
     s = sub.add_parser("show", help="подробности по игре")
     s.add_argument("game", help="название, appid или путь")
     s.set_defaults(fn=cmd_show)
@@ -286,8 +313,9 @@ def main(argv: list[str] | None = None) -> None:
 
     s = sub.add_parser("opti-install", help="установить OptiScaler (заменяет dlssg_for_sm86)")
     s.add_argument("game")
-    s.add_argument("--fg", default="optifg", choices=list(optiscaler.FG_MODES))
-    s.add_argument("--proxy", default="dxgi.dll", choices=optiscaler.PROXY_NAMES)
+    s.add_argument("--fg", default="auto", choices=["auto"] + list(optiscaler.FG_MODES),
+                   help="способ FG; auto — по анализу файлов игры")
+    s.add_argument("--proxy", choices=optiscaler.PROXY_NAMES, help="по умолчанию — по анализу игры")
     s.add_argument("--upscaler", choices=optiscaler.UPSCALERS)
     s.add_argument("--target", help="папка с exe (по умолчанию определяется автоматически)")
     s.add_argument("--bundle", help="тег сборки или путь к архиву/папке OptiScaler")

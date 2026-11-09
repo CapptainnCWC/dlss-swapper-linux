@@ -13,7 +13,7 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import __version__, core, dlssg_sm86, gpu, optiscaler, steam, swapper, updater  # noqa: E402
+from . import __version__, core, detect, dlssg_sm86, gpu, optiscaler, steam, swapper, updater  # noqa: E402
 from .library import DLL_TYPES, Library  # noqa: E402
 
 APP_ID = "io.github.capptainncwc.DlssSwapperLinux"
@@ -384,18 +384,19 @@ class Window(Adw.ApplicationWindow):
         def fn():
             return (swapper.scan(g.path), swapper.anti_cheat(g.path), swapper.exe_candidates(g.path),
                     {k: self.lib.records(k) for k in DLL_TYPES}, optiscaler.local_bundles(),
-                    steam.get_launch_options(g) if g.source != "folder" else "")
+                    steam.get_launch_options(g) if g.source != "folder" else "",
+                    detect.analyze(g.path, self.gpu))
 
         def done(res):
             if self.current is not g:
                 return
-            self.dlls, ac, cands, recs, bundles, lopts = res
+            self.dlls, ac, cands, recs, bundles, lopts, an = res
             self.scan_cache[g.key] = self.dlls
-            self._set_page(self._game_page(g, ac, cands, recs, bundles, lopts))
+            self._set_page(self._game_page(g, ac, cands, recs, bundles, lopts, an))
 
         self.run_bg(fn, done, "Сканирование…")
 
-    def _game_page(self, g, ac, cands, recs, bundles, lopts) -> Gtk.Widget:
+    def _game_page(self, g, ac, cands, recs, bundles, lopts, an) -> Gtk.Widget:
         page = Adw.PreferencesPage()
 
         # ---- info
@@ -444,7 +445,7 @@ class Window(Adw.ApplicationWindow):
             grp.add(row)
         page.add(grp)
 
-        page.add(self._fg_group(g, cands, bundles))
+        page.add(self._fg_group(g, cands, bundles, an))
 
         # ---- launch options
         grp = Adw.PreferencesGroup(
@@ -486,23 +487,15 @@ class Window(Adw.ApplicationWindow):
         self._refresh_row(self.current)
 
     # ============================================================ Frame Generation (unified)
-    def _fg_group(self, g, cands, opti_bundles) -> Adw.PreferencesGroup:
+    def _fg_group(self, g, cands, opti_bundles, an) -> Adw.PreferencesGroup:
         method_now, rel_now, saved = core.current_fg(g)
         own = [d for d in self.dlls if not d.owned_by_optiscaler]
         has_fg = any(d.kind == "dlss_g" for d in own)
-        has_dlss = any(d.kind == "dlss" for d in own)
         o = saved if method_now and method_now != "native" else {}
         n = saved if method_now == "native" else {}
 
-        if self.gpu.native_dlss_fg:
-            desc = "У вас RTX 40/50 — DLSS FG работает и без модов"
-        elif has_fg:
-            desc = "В игре есть DLSS FG — его можно разблокировать на этой видеокарте"
-        elif has_dlss:
-            desc = "В игре нет DLSS FG — кадры может генерировать OptiScaler из данных DLSS"
-        else:
-            desc = "OptiScaler: подмена апскейлера и генерация кадров"
-        grp = Adw.PreferencesGroup(title="Frame Generation", description=desc)
+        grp = Adw.PreferencesGroup(title="Frame Generation", description=an.reasons[0] if an.reasons else "")
+        grp.add(self._analysis_row(an))
 
         if method_now:
             if method_now == "native":
@@ -528,9 +521,7 @@ class Window(Adw.ApplicationWindow):
             grp.add(st)
 
         self._methods = [m for m in core.FG_METHODS if m != "native" or self.gpu.is_nvidia]
-        default = "optifg" if has_fg else ("upscaler" if has_dlss else "none")
-        if self.gpu.native_dlss_fg:
-            default = "none"
+        default = an.method
         self.w_method = _combo("Способ", [core.FG_METHODS[m] for m in self._methods],
                                _idx(self._methods, method_now or default))
         grp.add(self.w_method)
@@ -558,7 +549,8 @@ class Window(Adw.ApplicationWindow):
         adv = Adw.ExpanderRow(title="Дополнительно")
         self._cands = cands or [g.path]
         rels = [str(p.relative_to(g.path)) if p != g.path else "." for p in self._cands]
-        self.w_target = _combo("Папка с exe", [_folder_label(r) for r in rels], _idx(rels, rel_now))
+        an_rel = str(an.target.relative_to(g.path)) if an.target != g.path else "."
+        self.w_target = _combo("Папка с exe", [_folder_label(r) for r in rels], _idx(rels, rel_now or an_rel))
         self.w_target.set_factory(_value_factory(ellipsize=1, max_chars=18))
         adv.add_row(self.w_target)
         self.w_writelaunch = _switch("Прописать параметры запуска", g.source != "folder",
@@ -568,7 +560,7 @@ class Window(Adw.ApplicationWindow):
         self.w_bundle = _combo("Версия OptiScaler", [b.tag for b in opti_bundles] + ["Последняя с GitHub"],
                                _idx([b.tag for b in opti_bundles], o and optiscaler.installed(g.path)
                                     .get(rel_now, {}).get("version")))
-        self.w_proxy = _combo("Имя прокси-DLL", optiscaler.PROXY_NAMES, _idx(optiscaler.PROXY_NAMES, o.get("proxy")),
+        self.w_proxy = _combo("Имя прокси-DLL", optiscaler.PROXY_NAMES, _idx(optiscaler.PROXY_NAMES, o.get("proxy", an.proxy)),
                               "Если игра не стартует с dxgi.dll — попробуйте winmm.dll")
         game_fsr = optiscaler.game_has_fsr31(self._cands[_idx(rels, rel_now)])
         self.w_gamefsr = _switch("FSR FG из игры", o.get("use_game_fsr", True) and game_fsr,
@@ -631,6 +623,22 @@ class Window(Adw.ApplicationWindow):
         bb.append(b)
         grp.add(bb)
         return grp
+
+    def _analysis_row(self, an) -> Adw.ExpanderRow:
+        rec = core.FG_METHODS.get(an.method, an.method)
+        title = f"Рекомендуется: {rec}" if an.supported else "Моды здесь не помогут"
+        row = Adw.ExpanderRow(title=title, subtitle=" · ".join([an.engine, an.api] + an.feature_labels))
+        row.add_prefix(Gtk.Image(icon_name="system-search-symbolic"))
+        lines = [("Движок и API", f"{an.engine}, {an.api}" + (f" · {an.exe.name}" if an.exe else "")),
+                 ("Найдено в игре", ", ".join(an.feature_labels) or "ничего из DLSS / FSR / XeSS"),
+                 ("Прокси-DLL", an.proxy + (f" (заняты: {', '.join(an.foreign_proxies)})" if an.foreign_proxies else ""))]
+        lines += [("Почему", r) for r in an.reasons]
+        lines += [("Внимание", w) for w in an.warnings]
+        for t, sub in lines:
+            r = Adw.ActionRow(title=t, subtitle=GLib.markup_escape_text(sub), subtitle_selectable=True)
+            r.add_css_class("property")
+            row.add_row(r)
+        return row
 
     def on_apply_fg(self, _b) -> None:
         g = self.current

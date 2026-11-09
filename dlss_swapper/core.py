@@ -34,7 +34,7 @@ FG_METHODS = {
     "nukems": "FSR3 FG (Nukem)",
     "xefg": "XeSS FG",
     "upscaler": "Из апскейлера",
-    "native": "DLSS FG (sm86)",
+    "native": "DLSS FG (sm86, эксп.)",
 }
 FG_METHOD_HINTS = {
     "none": "OptiScaler без генерации кадров",
@@ -42,7 +42,7 @@ FG_METHOD_HINTS = {
     "nukems": "DLSS FG игры → dlssg-to-fsr3 через OptiScaler",
     "xefg": "DLSS FG игры → XeSS FG через OptiScaler",
     "upscaler": "Для игр без DLSS FG: OptiScaler генерирует кадры из DLSS",
-    "native": "Настоящий DLSS-G от NVIDIA на RTX 20/30 (dlssg_for_sm86), экспериментально",
+    "native": "Только dlssg_for_sm86, без OptiScaler и его меню. Под Proton пока не работает (нет CUDA)",
 }
 
 

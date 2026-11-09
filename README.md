@@ -34,6 +34,15 @@ git clone https://github.com/CapptainnCWC/dlss-swapper-linux && cd dlss-swapper-
 
 Если в Steam нажать «Проверить целостность файлов», Steam вернёт оригинальные DLL.
 
+### Автоопределение
+Для каждой игры приложение смотрит её файлы и предлагает, что ставить. Блок «Рекомендуется» в карточке Frame Generation (или `dlss-swapper-linux detect "Игра"`) показывает:
+- движок (Unreal, Unity, RE Engine…) и графический API — DX12 / DX11 / Vulkan берутся из таблицы импорта exe, а если рендерер грузится динамически, как в Baldur's Gate 3, то из строк внутри exe;
+- что есть в игре: DLSS, DLSS FG, DLSS RR, Streamline, Reflex, FSR 3.1, FSR FG, XeSS, XeSS FG;
+- папку с exe (для UE — `*/Binaries/Win64`, папка `Engine` пропускается);
+- какие имена прокси-DLL уже заняты игрой или другим модом.
+
+Из этого выбираются способ FG, имя прокси (`dxgi.dll`; если он занят — `winmm.dll`; для Vulkan — всегда `winmm.dll`), папка и использование FSR игры. Если что-то уже установлено, карточка показывает установленные настройки, а рекомендацию — отдельно.
+
 ### Frame Generation
 Всё про генерацию кадров собрано в одной карточке **Frame Generation**. Выберите способ и нажмите «Установить» (или «Применить», если уже установлено). Приложение уберёт то, что стояло раньше, поставит выбранное и один раз запишет параметры запуска Steam. Выбранные настройки сохраняются в состоянии игры и показываются при следующем открытии.
 
@@ -66,10 +75,12 @@ git clone https://github.com/CapptainnCWC/dlss-swapper-linux && cd dlss-swapper-
 ```bash
 dlss-swapper-linux list                       # игры с найденными DLL
 dlss-swapper-linux show "Cyberpunk"           # подробности
+dlss-swapper-linux detect "Cyberpunk"         # анализ файлов и рекомендация
 dlss-swapper-linux versions --type dlss_g     # доступные версии
 dlss-swapper-linux swap "Cyberpunk" latest    # DLSS/FG/RR до последних версий
 dlss-swapper-linux swap 1091500 310.9.16.0 --type dlss
 dlss-swapper-linux restore "Cyberpunk"        # вернуть оригиналы
+dlss-swapper-linux opti-install "Cyberpunk"                     # способ и прокси по анализу игры
 dlss-swapper-linux opti-install "Cyberpunk" --fg optifg --preset 11
 dlss-swapper-linux opti-install "Game" --fg upscaler --log          # FG для игр без DLSS FG
 dlss-swapper-linux opti-install "Game" --fg upscaler --no-game-fsr  # FSR из комплекта OptiScaler
