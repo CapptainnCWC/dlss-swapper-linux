@@ -221,10 +221,11 @@ def analyze(game_dir: Path, gpu: GpuInfo, dlls: list | None = None) -> Analysis:
     elif has("dlss_fg") and a.api == "DX12" and gpu.is_nvidia and _dlssg_310(game_dir):
         a.method = "dlssg_open"
         a.reasons.insert(0, "В игре есть DLSS FG 310.x — можно запустить настоящий DLSS-G NVIDIA на этой карте "
-                            "(dlssg-open). Если не заработает — FSR FG через OptiScaler")
+                            "(dlssg-open). Если не заработает — XeSS FG или FSR FG через OptiScaler")
     elif has("dlss_fg") and a.api == "DX12":
         a.method = "optifg"
-        a.reasons.insert(0, "В игре есть DLSS FG — OptiScaler разблокирует его, кадры генерирует FSR FG")
+        a.reasons.insert(0, "В игре есть DLSS FG — OptiScaler разблокирует его, кадры генерирует FSR FG. "
+                            "Если игра зависает — выберите XeSS FG (в Black Myth: Wukong работает только он)")
     elif has("dlss") and a.api == "DX12":
         a.method = "upscaler"
         a.reasons.insert(0, "DLSS есть, DLSS FG нет — OptiScaler генерирует кадры из данных DLSS")

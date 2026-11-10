@@ -256,6 +256,11 @@ def game_has_fsr31(target_dir: Path) -> bool:
     return f.is_file() and f.stat().st_size > 1_000_000
 
 
+def wine_path(p: Path) -> str:
+    """Absolute Windows path of a host file as Wine/Proton sees it (Z: maps to /)."""
+    return "Z:" + str(Path(p).resolve()).replace("/", "\\")
+
+
 def uses_dlssg_input(fg_mode: str) -> bool:
     """Modes that take the game's own DLSS-G inputs (need the in-game DLSS FG toggle)."""
     return fg_mode in ("optifg", "nukems", "xefg")
@@ -341,7 +346,13 @@ def install(game_dir: Path, target_dir: Path, bundle: Bundle, opts: InstallOptio
     ini = target_dir / "OptiScaler.ini"
     if ini.is_file():
         text = ini.read_text(errors="replace")
-        for sec, key, val in ini_settings(opts):
+        settings = list(ini_settings(opts))
+        if use_game_fsr:
+            # OptiScaler tries amd_fidelityfx_loader_dx12.dll first. Games that ship that FidelityFX 2.x
+            # loader without amd_fidelityfx_framegeneration_dx12.dll (e.g. Black Myth: Wukong) then
+            # end up with no FSR FG at all. Point it straight at the game's FSR 3.1 library instead.
+            settings.append(("Libraries", "FfxDx12Path", wine_path(target_dir / "amd_fidelityfx_dx12.dll")))
+        for sec, key, val in settings:
             text, ok = ini_set(text, sec, key, val)
             if not ok:
                 ini_missing.append(f"[{sec}] {key}")
