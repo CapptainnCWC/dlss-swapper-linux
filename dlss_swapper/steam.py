@@ -140,6 +140,17 @@ def shortcut_appid(exe: str, name: str) -> str:
     return str(crc)
 
 
+def _game_root(d: Path) -> Path:
+    """For an Unreal shortcut pointing at <Project>/Binaries/Win64 return the game root, whose
+    Engine/ folder holds DLSS, DLSS-G and Streamline. Keep the old folder if our state already
+    lives there, so earlier installs stay manageable."""
+    from .swapper import STATE_FILE
+    if (d.parent.name.lower() == "binaries" and len(d.parents) > 2
+            and (d.parents[2] / "Engine").is_dir() and not (d / STATE_FILE).exists()):
+        return d.parents[2]
+    return d
+
+
 def shortcut_games(roots: list[Path] | None = None) -> list[Game]:
     out = []
     for root in roots if roots is not None else find_steam_roots():
@@ -162,7 +173,7 @@ def shortcut_games(roots: list[Path] | None = None) -> list[Game]:
                 appid = str(aid[1] & 0xFFFFFFFF) if isinstance(aid, tuple) else shortcut_appid(exe, name)
                 if not exe.lower().endswith(".exe"):
                     continue  # native Linux shortcut, Proton not involved
-                d = Path(start) if start and os.path.isdir(start) else Path(exe).parent
+                d = _game_root(Path(start) if start and os.path.isdir(start) else Path(exe).parent)
                 if name.lower().endswith(".exe"):
                     name = f"{d.name} ({name})"
                 if d.is_dir():
