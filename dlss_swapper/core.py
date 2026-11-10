@@ -125,6 +125,8 @@ def _undo_compat(game: Game, notes: list) -> None:
             notes.append("Возвращён прежний инструмент совместимости")
         except steam.SteamRunningError:
             notes.append("Steam открыт: в Свойствах игры → Совместимость верните прежний Proton")
+    if game.steam_root and c.get("tool") and compat.remove_tool_if_unused(game.steam_root, c["tool"]):
+        notes.append("Proton-обёртка больше не используется и удалена")
 
 
 def _setup_compat(game: Game, runtime: dict, notes: list) -> None:
@@ -172,7 +174,23 @@ def _enable_hags(game: Game, notes: list) -> None:
         notes.append("Wine запущен: HwSchMode (HAGS) в реестр не записан — повторите, когда игра закрыта")
         return
     if wineprefix.enable_hags(pfx):
+        st = load_state(game.path)
+        st["hags_added"] = True   # we wrote it, so Remove takes it back out
+        save_state(game.path, st)
         notes.append("В реестр префикса записан HwSchMode=2 (HAGS включён)")
+
+
+def _undo_hags(game: Game, notes: list) -> None:
+    st = load_state(game.path)
+    if not st.pop("hags_added", None):
+        return
+    pfx = compat.prefix_dir(game)
+    if pfx and wineprefix.prefix_busy():
+        st["hags_added"] = True
+        notes.append("Wine запущен: HwSchMode из реестра не удалён — нажмите «Удалить» ещё раз, когда игра закрыта")
+    elif pfx and wineprefix.disable_hags(pfx):
+        notes.append("HwSchMode удалён из реестра префикса")
+    save_state(game.path, st)
 
 
 def _uninstall_all(game: Game, cur: str, notes: list, keep_compat: bool = False) -> tuple[str, bool]:
@@ -212,6 +230,7 @@ def remove_all_fg(game: Game, write: bool = True) -> LaunchUpdate | None:
     old = _read_opts(game)
     notes: list = []
     cur, removed = _uninstall_all(game, old, notes)
+    _undo_hags(game, notes)
     if not removed:
         return None
     lu = _write_opts(game, old, cur, write)
@@ -269,6 +288,8 @@ def setup_fg(game: Game, target: Path, method: str, opti_opts: optiscaler.Instal
             warnings.append("Оставлены файлы игры: " + ", ".join(Path(s).name for s in res.skipped))
     if method in STREAMLINE_FG:
         _enable_hags(game, notes)
+    else:
+        _undo_hags(game, notes)
     lu = _write_opts(game, old, cur, write)
     spoof_ok = method == "dlssg_open" or (method in optiscaler.FG_MODES and opti_opts.spoof_ada)
     if "DXVK_NVAPI_GPU_ARCH" in lu.new and not spoof_ok:

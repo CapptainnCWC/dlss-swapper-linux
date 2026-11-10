@@ -216,6 +216,29 @@ def set_game_runtime(steam_root: Path, tool: str, appid: str, runtime: dict | No
         f.unlink(missing_ok=True)
 
 
+def remove_tool_if_unused(steam_root: Path, tool: str) -> bool:
+    """Delete our wrapper tool when no game uses it (no per-game config and no Steam mapping)."""
+    if not tool.startswith(TOOL_PREFIX):
+        return False
+    d = tool_dir(steam_root, tool)
+    games = d / "games"
+    if games.is_dir() and any(games.iterdir()):
+        return False
+    f = _config_path(steam_root)
+    if f.is_file():
+        m = _mapping(vdf.loads(f.read_text(errors="replace")), False) or {}
+        if any(isinstance(v, dict) and v.get("name") == tool for v in m.values()):
+            return False
+    if d.is_dir():
+        shutil.rmtree(d)
+        try:
+            d.parent.rmdir()  # compatibilitytools.d, only if nothing else is in it
+        except OSError:
+            pass
+        return True
+    return False
+
+
 def wrapper_assigned(game: Game, tool: str | None) -> bool:
     return bool(tool and game.steam_root and get_tool(game.steam_root, game.appid) == tool)
 

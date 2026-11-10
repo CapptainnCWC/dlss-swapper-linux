@@ -86,7 +86,15 @@ def delete_value(reg: Path, key: str, name: str) -> bool:
     new = re.sub(r'^"' + re.escape(name) + r'"=.*\n?', "", body, flags=re.M)
     if new == body:
         return False
-    reg.write_text(text[:m.end()] + new + text[end:])
+    if not body.endswith("\n"):
+        new = new.rstrip("\n")  # removed the last line of the section
+    child = re.compile(r"^\[" + re.escape(key) + r"\\\\", re.M | re.I)
+    if not re.search(r"^[^#\s]", new, re.M) and not child.search(text):
+        # key is now empty and has no subkeys: drop its section
+        before, after = text[:m.start()].rstrip("\n"), text[end:].lstrip("\n")
+        reg.write_text(before + ("\n\n" + after if after else "\n"))
+    else:
+        reg.write_text(text[:m.end()] + new + text[end:])
     return True
 
 
