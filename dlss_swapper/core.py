@@ -46,6 +46,11 @@ FG_METHOD_HINTS = {
     "nukems": "DLSS FG игры → FSR3 FG через dlssg-to-fsr3 (OptiScaler, DX12 и Vulkan)",
     "upscaler": "Для игр без DLSS FG: OptiScaler генерирует кадры из DLSS",
 }
+# Under Proton OptiScaler draws its menu on vkd3d's Vulkan swapchain. With FG running, opening it
+# crashed the GPU in WUCHANG (Xid 109/32 with FSR FG, Xid 13 with XeSS FG) and The Last of Us.
+OPTI_FG_METHODS = {"optifg", "xefg", "nukems", "upscaler"}
+OPTI_MENU_WARNING = ("Не открывайте меню OptiScaler (Insert) в игре, пока работает генерация кадров: "
+                     "под Proton это может уронить видеокарту. Все настройки меняйте здесь")
 # dlssg_for_sm86 needs NvAPI_D3D12_CreateCuModule, which DXVK-NVAPI does not implement,
 # so under Proton it crashes on FG start. Kept for the CLI, hidden in the GUI.
 HIDDEN_METHODS = {"native": "DLSS FG (dlssg_for_sm86)"}

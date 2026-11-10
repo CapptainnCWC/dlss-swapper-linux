@@ -642,6 +642,8 @@ class Window(Adw.ApplicationWindow):
             elif m == "dlssg_open":
                 ok, why = dlssgopen.runtime_ok(g.path)
                 hint = (hint + ". " + why) if ok else why
+            elif m in core.OPTI_FG_METHODS:
+                hint += ". " + core.OPTI_MENU_WARNING
             self.w_method.set_subtitle(hint)
 
         self.w_method.connect("notify::selected", update)

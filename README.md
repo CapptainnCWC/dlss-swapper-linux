@@ -50,9 +50,9 @@ git clone https://github.com/CapptainnCWC/dlss-swapper-linux && cd dlss-swapper-
 |---|---|---|
 | **DLSS FG (NVIDIA)** | Настоящий DLSS-G игры на RTX 20/30 через [dlssg-open](https://github.com/ProfessorTee/dlssg-open) | NVIDIA RTX 20/30, в игре DLSS FG 310.x. Проверено: Black Myth: Wukong, RTX 3060 |
 | Только апскейлер | OptiScaler без FG | Нужен другой апскейлер или настройки DLSS |
-| FSR FG (OptiFG) | DLSS FG игры → FSR FG через OptiScaler | В игре есть DLSS FG, видеокарта без RTX 40 |
-| FSR3 FG (Nukem) | DLSS FG игры → dlssg-to-fsr3 | То же, другая реализация |
-| XeSS FG | DLSS FG игры → XeSS FG | То же |
+| FSR FG (OptiFG) | DLSS FG игры → FSR FG через OptiScaler | В игре есть DLSS FG, видеокарта без RTX 40. Работает в WUCHANG; в Black Myth: Wukong зависает |
+| FSR3 FG (Nukem) | DLSS FG игры → dlssg-to-fsr3 | То же, другая реализация. В Wukong зависает |
+| XeSS FG | DLSS FG игры → XeSS FG | То же. Работает в Wukong (70–80 → 100–110 FPS) и WUCHANG |
 | Из апскейлера | OptiScaler генерирует кадры из данных DLSS | В игре нет DLSS FG (например, The Last of Us Part I) |
 
 Что выяснилось при отладке под Proton (RTX 3060, The Last of Us Part I) и выставлено по умолчанию:
@@ -60,7 +60,7 @@ git clone https://github.com/CapptainnCWC/dlss-swapper-linux && cd dlss-swapper-
 - **Сигнал готовности кадра** (`SimulateWaitableObject=true`) включён. Без него игра зависала сразу после старта FG.
 - **HUDFix** выключен: он может вызывать вылеты.
 - **Подмена архитектуры** `DXVK_NVAPI_GPU_ARCH=AD100` выключена. С ней DLSS запускал на RTX 30 ядра для RTX 40, и видеокарта падала (Xid 13/32). Включайте её только в режимах, где игре нужно показать переключатель DLSS FG.
-- Если игра зависает при открытии меню OptiScaler (Insert), а FG работает, играйте без меню: FG уже включён в `OptiScaler.ini`.
+- **Не открывайте меню OptiScaler (Insert) во время игры с FG.** Под Proton OptiScaler рисует меню через Vulkan поверх вывода vkd3d, и вместе с генерацией кадров это роняет видеокарту: с FSR FG сразу (Xid 109/32), с XeSS FG через несколько открытий (Xid 13). Без FG меню работает. Всё нужное уже записано в `OptiScaler.ini`, настройки меняйте в приложении.
 
 ### Настоящий DLSS FG (NVIDIA) на RTX 20/30
 NVIDIA DLSS-G 310.x уже содержит ядра для Ampere (`sm_86`), а под Proton ему мешают три вещи. Пресет «DLSS FG (NVIDIA)» закрывает все три по схеме [dlssg-open](https://github.com/ProfessorTee/dlssg-open) (MIT):
