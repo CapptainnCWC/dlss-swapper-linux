@@ -41,7 +41,7 @@ FG_MODES = {
 FG_SHORT = {
     "none": "Выключено",
     "optifg": "FSR FG",
-    "nukems": "FSR3 FG (Nukem)",
+    "nukems": "DLSSG → FSR3 (Nukem)",
     "xefg": "XeSS FG",
     "upscaler": "FSR FG",
 }

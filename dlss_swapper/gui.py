@@ -175,12 +175,10 @@ class Window(Adw.ApplicationWindow):
         self.search = Gtk.SearchEntry(placeholder_text="Поиск", hexpand=True)
         self.search.connect("search-changed", lambda *_: self.game_list.invalidate_filter())
         srow.append(self.search)
-        self.only_libs = Gtk.ToggleButton(icon_name="funnel-symbolic", active=True,
-                                          tooltip_text="Только игры с DLSS / FSR / XeSS")
-        self.only_libs.add_css_class("flat")
-        self.only_libs.connect("toggled", lambda *_: self.game_list.invalidate_filter())
-        srow.append(self.only_libs)
         sbox.append(srow)
+        self.only_libs = Gtk.CheckButton(label="Только игры с DLSS / FSR / XeSS", active=True)
+        self.only_libs.connect("toggled", lambda *_: self.game_list.invalidate_filter())
+        sbox.append(self.only_libs)
         box.append(sbox)
         self.game_list = Gtk.ListBox()
         self.game_list.add_css_class("navigation-sidebar")
@@ -559,13 +557,24 @@ class Window(Adw.ApplicationWindow):
                 warn.add_suffix(b)
                 grp.add(warn)
 
-        self._methods = [m for m in core.FG_METHODS
-                         if m != "dlssg_open" or (self.gpu.is_nvidia and not self.gpu.native_dlss_fg)]
+        def possible(m: str) -> bool:
+            """False only for presets that cannot work in this game / on this GPU."""
+            if m == "dlssg_open":
+                return has_fg and self.gpu.is_nvidia and not self.gpu.native_dlss_fg
+            if m == "nukems":
+                return has_fg
+            if m == "xefg":
+                return not has_fg
+            return True
+        show_all = getattr(self, "_show_all_fg", False)
+        self._methods = [m for m in core.FG_METHODS if show_all or possible(m) or m == method_now]
         if method_now == "native":
             self._methods.append("native")
         default = an.method
         self.w_method = _combo("Способ", [core.method_label(m) for m in self._methods],
                                _idx(self._methods, method_now or default))
+        # long hints in the subtitle must not squeeze the chosen method down to "Xe…"
+        self.w_method.set_factory(_value_factory(ellipsize=0, max_chars=24))
         grp.add(self.w_method)
 
         # OptiScaler options
@@ -598,6 +607,11 @@ class Window(Adw.ApplicationWindow):
         self.w_writelaunch = _switch("Прописать параметры запуска", g.source != "folder",
                                      "Steam должен быть закрыт", g.source != "folder")
         adv.add_row(self.w_writelaunch)
+        self.w_showall = _switch("Показать все способы", getattr(self, "_show_all_fg", False),
+                                 "Включая те, что по файлам игры не должны сработать (на случай, если "
+                                 "DLSSG не нашёлся или скачивается игрой позже)")
+        self.w_showall.connect("notify::active", self._on_show_all_fg)
+        adv.add_row(self.w_showall)
         self._bundles = opti_bundles
         self.w_bundle = _combo("Версия OptiScaler", [b.tag for b in opti_bundles] + ["Последняя с GitHub"],
                                _idx([b.tag for b in opti_bundles], o and optiscaler.installed(g.path)
@@ -695,6 +709,10 @@ class Window(Adw.ApplicationWindow):
             row.add_row(r)
         return row
 
+    def _on_show_all_fg(self, sw, *_):
+        self._show_all_fg = sw.get_active()
+        GLib.idle_add(lambda: (self.show_game(), False)[1])
+
     def on_apply_fg(self, _b) -> None:
         g = self.current
         method = self._methods[self.w_method.get_selected()]
@@ -725,7 +743,7 @@ class Window(Adw.ApplicationWindow):
 
         def fn():
             return core.setup_fg(g, target, method, opti_opts, opti_bundle, dg_opts, dg_bundle, write,
-                                 dlssg_indicator=indicator,
+                                 dlssg_indicator=indicator, allow_any=getattr(self, "_show_all_fg", False),
                                  dlssgopen_bundle=lambda: (dlssgopen.local_bundles() or
                                                            [dlssgopen.download_latest(self.progress_cb)])[0])
 

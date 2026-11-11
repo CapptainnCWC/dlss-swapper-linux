@@ -32,10 +32,10 @@ class LaunchUpdate:
 # user picks; detect.py recommends one.
 FG_METHODS = {
     "none": "Только апскейлер",
-    "dlssg_open": "DLSS FG (NVIDIA)",
+    "dlssg_open": "DLSSG (NVIDIA)",
     "optifg": "FSR FG",
     "xefg": "XeSS FG",
-    "nukems": "FSR3 FG (Nukem)",
+    "nukems": "DLSSG → FSR3 (Nukem)",
 }
 FG_METHOD_HINTS = {
     "none": "OptiScaler без генерации кадров",
@@ -55,7 +55,7 @@ HIDDEN_METHODS = {"native": "DLSS FG (dlssg_for_sm86)"}
 STREAMLINE_FG = {"dlssg_open", "nukems", "native"}
 # "upscaler" was a separate preset; with FSR FG now always fed from the upscaler it is the same thing
 METHOD_ALIASES = {"upscaler": "optifg"}
-XEFG_NEEDS_NO_DLSSG = "В игре есть DLSS FG — XeSS FG здесь не используется. Выберите DLSS FG (NVIDIA) или FSR FG"
+XEFG_NEEDS_NO_DLSSG = "В игре есть DLSSG — XeSS FG здесь не используется. Выберите DLSSG (NVIDIA) или FSR FG"
 
 
 @dataclass
@@ -248,12 +248,12 @@ def remove_all_fg(game: Game, write: bool = True) -> LaunchUpdate | None:
 
 def setup_fg(game: Game, target: Path, method: str, opti_opts: optiscaler.InstallOptions,
              opti_bundle, dlssg_opts: dlssg_sm86.Options, dlssg_bundle, write: bool = True,
-             dlssgopen_bundle=None, dlssg_indicator: bool = False) -> FgSetupResult:
+             dlssgopen_bundle=None, dlssg_indicator: bool = False, allow_any: bool = False) -> FgSetupResult:
     """Remove whatever is installed, install the chosen method, write launch options once.
 
     *_bundle are callables returning a bundle (they may download)."""
     method = METHOD_ALIASES.get(method, method)
-    if method == "xefg" and dlssg_sm86.game_has_dlssg(game.path):
+    if method == "xefg" and not allow_any and dlssg_sm86.game_has_dlssg(game.path):
         raise ValueError(XEFG_NEEDS_NO_DLSSG)
     old = _read_opts(game)
     notes: list[str] = []
