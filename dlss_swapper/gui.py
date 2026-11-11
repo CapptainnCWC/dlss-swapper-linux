@@ -11,7 +11,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from . import __version__, core, detect, dlssg_sm86, dlssgopen, gpu, optiscaler, steam, swapper, updater  # noqa: E402
 from .library import DLL_TYPES, Library  # noqa: E402
@@ -273,8 +273,21 @@ class Window(Adw.ApplicationWindow):
                 self.progress.set_fraction(done / total)
             GLib.idle_add(upd)
 
+    @staticmethod
+    def _dialog(title: str, body: str) -> Adw.AlertDialog:
+        """AlertDialog caps its body at ~370 px: long reports (install results, launch options)
+        get their own wider, left-aligned label instead."""
+        if len(body) <= 120:
+            return Adw.AlertDialog(heading=title, body=body)
+        d = Adw.AlertDialog(heading=title)
+        d.set_prefer_wide_layout(True)
+        lb = Gtk.Label(label=body, wrap=True, xalign=0, width_chars=64, max_width_chars=64)
+        lb.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        d.set_extra_child(lb)
+        return d
+
     def alert(self, title: str, body: str) -> None:
-        d = Adw.AlertDialog(heading=title, body=body)
+        d = self._dialog(title, body)
         d.add_response("ok", "OK")
         d.present(self)
 
@@ -914,7 +927,7 @@ class Window(Adw.ApplicationWindow):
 
     def _updated(self, msg: str) -> None:
         self.update_banner.set_revealed(False)
-        d = Adw.AlertDialog(heading="Готово", body=msg)
+        d = self._dialog("Готово", msg)
         d.add_response("later", "Позже")
         d.add_response("restart", "Перезапустить")
         d.set_response_appearance("restart", Adw.ResponseAppearance.SUGGESTED)
