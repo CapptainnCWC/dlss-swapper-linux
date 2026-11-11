@@ -41,7 +41,7 @@ FG_METHOD_HINTS = {
     "none": "OptiScaler без генерации кадров",
     "dlssg_open": "Настоящий DLSS-G игры на RTX 20/30 через dlssg-open (Proton-обёртка, nvcuda, DXVK-NVAPI)",
     "optifg": "OptiScaler генерирует кадры FSR FG из данных апскейлера (DLSS, FSR, XeSS). Включите апскейлер в игре",
-    "xefg": "OptiScaler генерирует кадры XeSS FG из данных апскейлера. Только для игр без DLSS FG",
+    "xefg": "OptiScaler генерирует кадры XeSS FG из данных апскейлера (DLSS, FSR, XeSS). Включите апскейлер в игре",
     "nukems": "DLSS FG игры → FSR3 FG через dlssg-to-fsr3 (OptiScaler, DX12 и Vulkan)",
 }
 # Under Proton OptiScaler draws its menu on vkd3d's Vulkan swapchain. With FG running, opening it
@@ -55,7 +55,7 @@ HIDDEN_METHODS = {"native": "DLSS FG (dlssg_for_sm86)"}
 STREAMLINE_FG = {"dlssg_open", "nukems", "native"}
 # "upscaler" was a separate preset; with FSR FG now always fed from the upscaler it is the same thing
 METHOD_ALIASES = {"upscaler": "optifg"}
-XEFG_NEEDS_NO_DLSSG = "В игре есть DLSSG — XeSS FG здесь не используется. Выберите DLSSG (NVIDIA) или FSR FG"
+XEFG_WITH_DLSSG = "В игре есть DLSSG — обычно лучше DLSSG (NVIDIA). XeSS FG берёт кадры из апскейлера, DLSSG игры не трогает"
 
 
 @dataclass
@@ -248,13 +248,11 @@ def remove_all_fg(game: Game, write: bool = True) -> LaunchUpdate | None:
 
 def setup_fg(game: Game, target: Path, method: str, opti_opts: optiscaler.InstallOptions,
              opti_bundle, dlssg_opts: dlssg_sm86.Options, dlssg_bundle, write: bool = True,
-             dlssgopen_bundle=None, dlssg_indicator: bool = False, allow_any: bool = False) -> FgSetupResult:
+             dlssgopen_bundle=None, dlssg_indicator: bool = False) -> FgSetupResult:
     """Remove whatever is installed, install the chosen method, write launch options once.
 
     *_bundle are callables returning a bundle (they may download)."""
     method = METHOD_ALIASES.get(method, method)
-    if method == "xefg" and not allow_any and dlssg_sm86.game_has_dlssg(game.path):
-        raise ValueError(XEFG_NEEDS_NO_DLSSG)
     old = _read_opts(game)
     notes: list[str] = []
     needs_wrapper = method == "dlssg_open" or (method == "native" and dlssg_opts.fake_cuda)

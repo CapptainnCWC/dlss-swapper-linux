@@ -563,11 +563,8 @@ class Window(Adw.ApplicationWindow):
                 return has_fg and self.gpu.is_nvidia and not self.gpu.native_dlss_fg
             if m == "nukems":
                 return has_fg
-            if m == "xefg":
-                return not has_fg
             return True
-        show_all = getattr(self, "_show_all_fg", False)
-        self._methods = [m for m in core.FG_METHODS if show_all or possible(m) or m == method_now]
+        self._methods = [m for m in core.FG_METHODS if possible(m) or m == method_now]
         if method_now == "native":
             self._methods.append("native")
         default = an.method
@@ -607,11 +604,6 @@ class Window(Adw.ApplicationWindow):
         self.w_writelaunch = _switch("Прописать параметры запуска", g.source != "folder",
                                      "Steam должен быть закрыт", g.source != "folder")
         adv.add_row(self.w_writelaunch)
-        self.w_showall = _switch("Показать все способы", getattr(self, "_show_all_fg", False),
-                                 "Включая те, что по файлам игры не должны сработать (на случай, если "
-                                 "DLSSG не нашёлся или скачивается игрой позже)")
-        self.w_showall.connect("notify::active", self._on_show_all_fg)
-        adv.add_row(self.w_showall)
         self._bundles = opti_bundles
         self.w_bundle = _combo("Версия OptiScaler", [b.tag for b in opti_bundles] + ["Последняя с GitHub"],
                                _idx([b.tag for b in opti_bundles], o and optiscaler.installed(g.path)
@@ -667,7 +659,7 @@ class Window(Adw.ApplicationWindow):
             if m in ("nukems", "native", "dlssg_open") and not has_fg:
                 hint = "В игре нет DLSS FG — этот способ не сработает, выберите FSR FG или XeSS FG"
             elif m == "xefg" and has_fg:
-                hint = core.XEFG_NEEDS_NO_DLSSG
+                hint = core.XEFG_WITH_DLSSG + ". " + core.OPTI_MENU_WARNING
             elif m == "dlssg_open":
                 ok, why = dlssgopen.runtime_ok(g.path)
                 hint = (hint + ". " + why) if ok else why
@@ -709,10 +701,6 @@ class Window(Adw.ApplicationWindow):
             row.add_row(r)
         return row
 
-    def _on_show_all_fg(self, sw, *_):
-        self._show_all_fg = sw.get_active()
-        GLib.idle_add(lambda: (self.show_game(), False)[1])
-
     def on_apply_fg(self, _b) -> None:
         g = self.current
         method = self._methods[self.w_method.get_selected()]
@@ -743,7 +731,7 @@ class Window(Adw.ApplicationWindow):
 
         def fn():
             return core.setup_fg(g, target, method, opti_opts, opti_bundle, dg_opts, dg_bundle, write,
-                                 dlssg_indicator=indicator, allow_any=getattr(self, "_show_all_fg", False),
+                                 dlssg_indicator=indicator,
                                  dlssgopen_bundle=lambda: (dlssgopen.local_bundles() or
                                                            [dlssgopen.download_latest(self.progress_cb)])[0])
 

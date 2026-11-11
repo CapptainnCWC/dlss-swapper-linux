@@ -35,7 +35,7 @@ FG_MODES = {
     "none": "Без FG (только апскейлер)",
     "optifg": "FSR FG из данных апскейлера",
     "nukems": "DLSS FG → FSR3 FG (Nukem dlssg-to-fsr3)",
-    "xefg": "XeSS FG из данных апскейлера (игры без DLSS FG)",
+    "xefg": "XeSS FG из данных апскейлера",
     "upscaler": "FSR FG из данных апскейлера (старое имя)",
 }
 FG_SHORT = {
@@ -49,7 +49,7 @@ FG_HINTS = {
     "none": "Только апскейлер, без генерации кадров",
     "optifg": "OptiScaler генерирует кадры FSR FG из данных апскейлера игры",
     "nukems": "DLSS FG игры → dlssg-to-fsr3",
-    "xefg": "OptiScaler генерирует кадры XeSS FG из данных апскейлера. Только для игр без DLSS FG",
+    "xefg": "OptiScaler генерирует кадры XeSS FG из данных апскейлера игры",
     "upscaler": "То же, что FSR FG",
 }
 UPSCALERS =["dlss", "fsr31", "xess", "fsr22", "auto"]

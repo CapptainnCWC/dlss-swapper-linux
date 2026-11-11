@@ -52,9 +52,9 @@ git clone https://github.com/CapptainnCWC/dlss-swapper-linux && cd dlss-swapper-
 | Только апскейлер | OptiScaler без FG | Нужен другой апскейлер или настройки DLSS |
 | FSR FG | OptiScaler генерирует кадры FSR FG из данных апскейлера (DLSS/FSR/XeSS) | Любая DX12-игра с апскейлером, в том числе без DLSS FG (например, The Last of Us Part I) |
 | DLSSG → FSR3 (Nukem) | DLSS FG игры → dlssg-to-fsr3 | То же, другая реализация. В Wukong зависает |
-| XeSS FG | OptiScaler генерирует кадры XeSS FG из данных апскейлера | Только игры **без** DLSS FG. Если FSR FG зависает |
+| XeSS FG | OptiScaler генерирует кадры XeSS FG из данных апскейлера | Любая DX12-игра с апскейлером. Если FSR FG зависает (работал в Wukong и WUCHANG) |
 
-В списке показываются только способы, которые могут сработать в этой игре: пресеты на DLSSG (DLSSG (NVIDIA), DLSSG → FSR3 (Nukem)) скрыты, если в файлах игры нет `nvngx_dlssg.dll` / `sl.dlss_g.dll`, а XeSS FG скрыт, если DLSSG есть. «Дополнительно → Показать все способы» показывает всё, на случай если игра скачивает DLSSG позже.
+В списке показываются только способы, которые могут сработать в этой игре: пресеты на DLSSG (DLSSG (NVIDIA), DLSSG → FSR3 (Nukem)) скрыты, если в файлах игры нет `nvngx_dlssg.dll` / `sl.dlss_g.dll` — без них они не сработают. Всё остальное всегда в списке.
 
 Что выяснилось при отладке под Proton (RTX 3060, The Last of Us Part I) и выставлено по умолчанию:
 - **FSR FG из игры.** Если в игре есть свой FSR 3.1 (`amd_fidelityfx_dx12.dll`), OptiScaler берёт его, а файлы FSR 4 SDK из комплекта не копируются: FG из FSR 4 SDK ронял видеокарту (Xid 32).
