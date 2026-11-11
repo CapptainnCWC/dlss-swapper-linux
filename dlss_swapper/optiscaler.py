@@ -33,24 +33,24 @@ LOG_FILES = ["OptiScaler.log", "fakenvapi.log", "dlssg_to_fsr3.log"]
 
 FG_MODES = {
     "none": "Без FG (только апскейлер)",
-    "optifg": "DLSS FG → FSR FG (OptiFG, рекомендуется)",
+    "optifg": "FSR FG из данных апскейлера",
     "nukems": "DLSS FG → FSR3 FG (Nukem dlssg-to-fsr3)",
-    "xefg": "DLSS FG → XeSS FG",
-    "upscaler": "FG из апскейлера (игры без DLSS FG)",
+    "xefg": "XeSS FG из данных апскейлера (игры без DLSS FG)",
+    "upscaler": "FSR FG из данных апскейлера (старое имя)",
 }
 FG_SHORT = {
     "none": "Выключено",
-    "optifg": "FSR FG (OptiFG)",
+    "optifg": "FSR FG",
     "nukems": "FSR3 FG (Nukem)",
     "xefg": "XeSS FG",
-    "upscaler": "Из апскейлера",
+    "upscaler": "FSR FG",
 }
 FG_HINTS = {
     "none": "Только апскейлер, без генерации кадров",
-    "optifg": "DLSS FG игры → FSR FG. Рекомендуется",
+    "optifg": "OptiScaler генерирует кадры FSR FG из данных апскейлера игры",
     "nukems": "DLSS FG игры → dlssg-to-fsr3",
-    "xefg": "DLSS FG игры → XeSS FG",
-    "upscaler": "Для игр без DLSS FG. Включается в меню OptiScaler",
+    "xefg": "OptiScaler генерирует кадры XeSS FG из данных апскейлера. Только для игр без DLSS FG",
+    "upscaler": "То же, что FSR FG",
 }
 UPSCALERS =["dlss", "fsr31", "xess", "fsr22", "auto"]
 
@@ -222,8 +222,10 @@ def ini_settings(opts: InstallOptions) -> list[tuple[str, str, str]]:
         s += [("FrameGen", "Enabled", "false"), ("FrameGen", "FGInput", "nofg"),
               ("FrameGen", "FGOutput", "nofg")]
     else:
-        fg_in, fg_out = {"optifg": ("dlssg", "fsrfg"), "nukems": ("nukems", "nukems"),
-                         "xefg": ("dlssg", "xefg"), "upscaler": ("upscaler", "fsrfg")}[opts.fg_mode]
+        # Only Nukem takes the game's own DLSS-G as its source (it works by replacing it). FSR FG
+        # and XeSS FG are fed from the upscaler, so they never depend on the game's DLSS FG.
+        fg_in, fg_out = {"optifg": ("upscaler", "fsrfg"), "nukems": ("nukems", "nukems"),
+                         "xefg": ("upscaler", "xefg"), "upscaler": ("upscaler", "fsrfg")}[opts.fg_mode]
         s += [("FrameGen", "Enabled", "true"), ("FrameGen", "FGInput", fg_in),
               ("FrameGen", "FGOutput", fg_out), ("Menu", "OverlayMenu", "true"),
               ("OptiFG", "HUDFix", "true" if opts.hudfix else "false"),
@@ -263,7 +265,7 @@ def wine_path(p: Path) -> str:
 
 def uses_dlssg_input(fg_mode: str) -> bool:
     """Modes that take the game's own DLSS-G inputs (need the in-game DLSS FG toggle)."""
-    return fg_mode in ("optifg", "nukems", "xefg")
+    return fg_mode == "nukems"
 
 
 def launch_env(opts: InstallOptions) -> tuple[dict[str, str], dict[str, str]]:
@@ -300,7 +302,7 @@ def install(game_dir: Path, target_dir: Path, bundle: Bundle, opts: InstallOptio
         state = load_state(game_dir)
     warnings: list[str] = []
     names_l = {p.name.lower() for p in target_dir.iterdir()}
-    if opts.fg_mode in ("optifg", "nukems", "xefg") and not any(
+    if opts.fg_mode == "nukems" and not any(
             f.lower() == "nvngx_dlssg.dll" for _r, _d, fs in os.walk(game_dir) for f in fs):
         warnings.append("В игре не найден nvngx_dlssg.dll: режимы с входом DLSS FG могут не "
                         "заработать. Попробуйте режим 'upscaler'.")

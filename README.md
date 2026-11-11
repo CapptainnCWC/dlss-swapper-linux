@@ -3,7 +3,7 @@
 Аналог [DLSS Swapper](https://github.com/beeradmoore/dlss-swapper) для Linux и игр, запускаемых через **Steam + Proton**.
 
 - Меняет версии **DLSS**, **DLSS Frame Generation**, **DLSS Ray Reconstruction**, **FSR 3.1** и **XeSS** в играх. Оригиналы сохраняются рядом как `*.dlsss`.
-- Ставит **OptiScaler** и **разблокирует DLSS Frame Generation на картах без RTX 40** (RTX 20/30, AMD, Intel): игра показывает переключатель DLSS FG, а кадры генерирует FSR FG (OptiFG), Nukem `dlssg-to-fsr3` или XeSS FG.
+- Ставит **OptiScaler** и **включает генерацию кадров на картах без RTX 40** (RTX 20/30, AMD, Intel): FSR FG или XeSS FG из данных апскейлера игры, либо Nukem `dlssg-to-fsr3` вместо DLSS FG игры.
 - **Нативный DLSS Frame Generation на RTX 20/30** через [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86): настоящий DLSS-G от NVIDIA (2X–6X), а не подмена на FSR. Работает в играх, где DLSS FG уже есть.
 - Сам прописывает **параметры запуска Steam** (`WINEDLLOVERRIDES`, переменные DXVK-NVAPI), так что игра запускается из Steam как обычно.
 - Находит игры Steam (обычный, Flatpak, Snap), все библиотеки и **сторонние игры, добавленные в Steam** (например, установленные вне Steam), плюс любые папки, которые вы добавите вручную.
@@ -50,10 +50,9 @@ git clone https://github.com/CapptainnCWC/dlss-swapper-linux && cd dlss-swapper-
 |---|---|---|
 | **DLSS FG (NVIDIA)** | Настоящий DLSS-G игры на RTX 20/30 через [dlssg-open](https://github.com/ProfessorTee/dlssg-open) | NVIDIA RTX 20/30, в игре DLSS FG 310.x. Проверено: Black Myth: Wukong, RTX 3060 |
 | Только апскейлер | OptiScaler без FG | Нужен другой апскейлер или настройки DLSS |
-| FSR FG (OptiFG) | DLSS FG игры → FSR FG через OptiScaler | В игре есть DLSS FG, видеокарта без RTX 40. Работает в WUCHANG; в Black Myth: Wukong зависает |
+| FSR FG | OptiScaler генерирует кадры FSR FG из данных апскейлера (DLSS/FSR/XeSS) | Любая DX12-игра с апскейлером, в том числе без DLSS FG (например, The Last of Us Part I) |
 | FSR3 FG (Nukem) | DLSS FG игры → dlssg-to-fsr3 | То же, другая реализация. В Wukong зависает |
-| XeSS FG | DLSS FG игры → XeSS FG | То же. Работает в Wukong (70–80 → 100–110 FPS) и WUCHANG |
-| Из апскейлера | OptiScaler генерирует кадры из данных DLSS | В игре нет DLSS FG (например, The Last of Us Part I) |
+| XeSS FG | OptiScaler генерирует кадры XeSS FG из данных апскейлера | Только игры **без** DLSS FG. Если FSR FG зависает |
 
 Что выяснилось при отладке под Proton (RTX 3060, The Last of Us Part I) и выставлено по умолчанию:
 - **FSR FG из игры.** Если в игре есть свой FSR 3.1 (`amd_fidelityfx_dx12.dll`), OptiScaler берёт его, а файлы FSR 4 SDK из комплекта не копируются: FG из FSR 4 SDK ронял видеокарту (Xid 32).
@@ -96,8 +95,8 @@ dlss-swapper-linux swap 1091500 310.9.16.0 --type dlss
 dlss-swapper-linux restore "Cyberpunk"        # вернуть оригиналы
 dlss-swapper-linux opti-install "Cyberpunk"                     # способ и прокси по анализу игры
 dlss-swapper-linux opti-install "Cyberpunk" --fg optifg --preset 11
-dlss-swapper-linux opti-install "Game" --fg upscaler --log          # FG для игр без DLSS FG
-dlss-swapper-linux opti-install "Game" --fg upscaler --no-game-fsr  # FSR из комплекта OptiScaler
+dlss-swapper-linux opti-install "Game" --fg optifg --log            # FSR FG из данных апскейлера
+dlss-swapper-linux opti-install "Game" --fg optifg --no-game-fsr    # FSR из комплекта OptiScaler
 dlss-swapper-linux opti-remove "Cyberpunk"
 dlss-swapper-linux dlssg-install "Cyberpunk" --frames 2x --verbose   # нативный DLSS FG
 dlss-swapper-linux dlssg-remove "Cyberpunk"

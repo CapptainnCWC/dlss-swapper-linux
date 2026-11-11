@@ -221,14 +221,15 @@ def analyze(game_dir: Path, gpu: GpuInfo, dlls: list | None = None) -> Analysis:
     elif has("dlss_fg") and a.api == "DX12" and gpu.is_nvidia and _dlssg_310(game_dir):
         a.method = "dlssg_open"
         a.reasons.insert(0, "В игре есть DLSS FG 310.x — можно запустить настоящий DLSS-G NVIDIA на этой карте "
-                            "(dlssg-open). Если не заработает — XeSS FG или FSR FG через OptiScaler")
+                            "(dlssg-open). Если не заработает — FSR FG через OptiScaler")
     elif has("dlss_fg") and a.api == "DX12":
         a.method = "optifg"
-        a.reasons.insert(0, "В игре есть DLSS FG — OptiScaler разблокирует его, кадры генерирует FSR FG. "
-                            "Если игра зависает — выберите XeSS FG (в Black Myth: Wukong FSR FG и Nukem зависают, XeSS FG работает)")
+        a.reasons.insert(0, "В игре есть DLSS FG, но не 310.x — OptiScaler генерирует кадры FSR FG из данных апскейлера. "
+                            "Для настоящего DLSS FG замените nvngx_dlssg.dll на 310.x в разделе «Апскейлеры»")
     elif has("dlss") and a.api == "DX12":
-        a.method = "upscaler"
-        a.reasons.insert(0, "DLSS есть, DLSS FG нет — OptiScaler генерирует кадры из данных DLSS")
+        a.method = "optifg"
+        a.reasons.insert(0, "DLSS есть, DLSS FG нет — OptiScaler генерирует кадры FSR FG из данных DLSS. "
+                            "Если FSR FG зависает — попробуйте XeSS FG")
     elif (has("fsr_fg") or has("fsr3_legacy")) and not has("dlss"):
         a.method = "none"
         a.reasons.insert(0, "В игре есть свой FSR FG — включите его в настройках игры, моды не нужны")
@@ -241,7 +242,7 @@ def analyze(game_dir: Path, gpu: GpuInfo, dlls: list | None = None) -> Analysis:
         a.supported = False
         a.reasons.insert(0, "В игре нет DLSS, FSR 3.1 или XeSS — OptiScaler здесь подцепиться не к чему")
 
-    if a.game_fsr31 and a.method in ("optifg", "upscaler"):
+    if a.game_fsr31 and a.method == "optifg":
         a.reasons.append("Свой FSR 3.1 игры будет использован для FG (стабильнее FSR 4 из комплекта под Proton)")
     if has("dlss_fg") and not gpu.native_dlss_fg and gpu.is_nvidia and not _dlssg_310(game_dir):
         a.warnings.append("DLSS-G в игре старее 310.x — для настоящего DLSS FG замените nvngx_dlssg.dll "

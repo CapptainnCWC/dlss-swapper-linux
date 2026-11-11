@@ -650,8 +650,10 @@ class Window(Adw.ApplicationWindow):
                 r.set_sensitive(fg_on)
             self.w_spoof.set_sensitive(self.gpu.is_nvidia and optiscaler.uses_dlssg_input(m))
             hint = core.FG_METHOD_HINTS.get(m, core.method_label(m))
-            if m in ("optifg", "nukems", "xefg", "native", "dlssg_open") and not has_fg:
-                hint = "В игре нет DLSS FG — этот способ не сработает, выберите «Из апскейлера»"
+            if m in ("nukems", "native", "dlssg_open") and not has_fg:
+                hint = "В игре нет DLSS FG — этот способ не сработает, выберите FSR FG или XeSS FG"
+            elif m == "xefg" and has_fg:
+                hint = core.XEFG_NEEDS_NO_DLSSG
             elif m == "dlssg_open":
                 ok, why = dlssgopen.runtime_ok(g.path)
                 hint = (hint + ". " + why) if ok else why
@@ -738,10 +740,11 @@ class Window(Adw.ApplicationWindow):
             else:
                 self._copy(lu.new)
                 msg.append(("⚠ " + lu.error + "\n" if lu.error else "") + "Строка скопирована в буфер обмена")
-            if r.method in ("native", "dlssg_open"):
+            if r.method in ("native", "dlssg_open", "nukems"):
                 msg.append("\nВ игре включите DLSS и DLSS Frame Generation.")
             elif r.method != "none":
-                msg.append("\nВ игре включите DLSS. Меню OptiScaler — Insert.")
+                msg.append("\nВ игре включите DLSS (или FSR / XeSS) — генерация кадров включится сама. "
+                           "Меню OptiScaler (Insert) во время игры лучше не открывать.")
             self.alert("Готово", "\n".join(msg))
             self.show_game()
             self._refresh_row(g)

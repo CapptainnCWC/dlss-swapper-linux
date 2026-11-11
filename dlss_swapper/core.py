@@ -33,18 +33,16 @@ class LaunchUpdate:
 FG_METHODS = {
     "none": "Только апскейлер",
     "dlssg_open": "DLSS FG (NVIDIA)",
-    "optifg": "FSR FG (OptiFG)",
+    "optifg": "FSR FG",
     "xefg": "XeSS FG",
     "nukems": "FSR3 FG (Nukem)",
-    "upscaler": "Из апскейлера",
 }
 FG_METHOD_HINTS = {
     "none": "OptiScaler без генерации кадров",
     "dlssg_open": "Настоящий DLSS-G игры на RTX 20/30 через dlssg-open (Proton-обёртка, nvcuda, DXVK-NVAPI)",
-    "optifg": "DLSS FG игры → FSR FG через OptiScaler",
-    "xefg": "DLSS FG игры → XeSS FG через OptiScaler",
+    "optifg": "OptiScaler генерирует кадры FSR FG из данных апскейлера (DLSS, FSR, XeSS). Включите апскейлер в игре",
+    "xefg": "OptiScaler генерирует кадры XeSS FG из данных апскейлера. Только для игр без DLSS FG",
     "nukems": "DLSS FG игры → FSR3 FG через dlssg-to-fsr3 (OptiScaler, DX12 и Vulkan)",
-    "upscaler": "Для игр без DLSS FG: OptiScaler генерирует кадры из DLSS",
 }
 # Under Proton OptiScaler draws its menu on vkd3d's Vulkan swapchain. With FG running, opening it
 # crashed the GPU in WUCHANG (Xid 109/32 with FSR FG, Xid 13 with XeSS FG) and The Last of Us.
@@ -54,7 +52,10 @@ OPTI_MENU_WARNING = ("Не открывайте меню OptiScaler (Insert) в 
 # dlssg_for_sm86 needs NvAPI_D3D12_CreateCuModule, which DXVK-NVAPI does not implement,
 # so under Proton it crashes on FG start. Kept for the CLI, hidden in the GUI.
 HIDDEN_METHODS = {"native": "DLSS FG (dlssg_for_sm86)"}
-STREAMLINE_FG = {"dlssg_open", "optifg", "xefg", "nukems", "native"}
+STREAMLINE_FG = {"dlssg_open", "nukems", "native"}
+# "upscaler" was a separate preset; with FSR FG now always fed from the upscaler it is the same thing
+METHOD_ALIASES = {"upscaler": "optifg"}
+XEFG_NEEDS_NO_DLSSG = "В игре есть DLSS FG — XeSS FG здесь не используется. Выберите DLSS FG (NVIDIA) или FSR FG"
 
 
 @dataclass
@@ -84,7 +85,8 @@ def current_fg(game: Game) -> tuple[str | None, str | None, dict]:
     op = optiscaler.installed(game.path)
     if op:
         k, v = next(iter(op.items()))
-        return v.get("fg_mode", "none"), k, v.get("options", {})
+        m = v.get("fg_mode", "none")
+        return METHOD_ALIASES.get(m, m), k, v.get("options", {})
     return None, None, {}
 
 
@@ -250,6 +252,9 @@ def setup_fg(game: Game, target: Path, method: str, opti_opts: optiscaler.Instal
     """Remove whatever is installed, install the chosen method, write launch options once.
 
     *_bundle are callables returning a bundle (they may download)."""
+    method = METHOD_ALIASES.get(method, method)
+    if method == "xefg" and dlssg_sm86.game_has_dlssg(game.path):
+        raise ValueError(XEFG_NEEDS_NO_DLSSG)
     old = _read_opts(game)
     notes: list[str] = []
     needs_wrapper = method == "dlssg_open" or (method == "native" and dlssg_opts.fake_cuda)
