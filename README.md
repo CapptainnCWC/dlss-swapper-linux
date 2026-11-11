@@ -1,3 +1,5 @@
+<p align="center"><img src="packaging/icons/256.png" width="160" alt="DLSS Swapper"></p>
+
 # DLSS Swapper для Linux
 
 Аналог [DLSS Swapper](https://github.com/beeradmoore/dlss-swapper) для Linux и игр, запускаемых через **Steam + Proton**.

@@ -10,7 +10,7 @@ trap 'rm -rf "$BUILD"' EXIT
 R="$BUILD/root"
 
 install -d "$R/DEBIAN" "$R/usr/bin" "$R/usr/lib/$APP/dlss_swapper" \
-  "$R/usr/share/applications" "$R/usr/share/icons/hicolor/scalable/apps" "$R/usr/share/doc/$APP"
+  "$R/usr/share/applications" "$R/usr/share/doc/$APP"
 install -m644 dlss_swapper/*.py "$R/usr/lib/$APP/dlss_swapper/"
 cat > "$R/usr/bin/$APP" <<'SH'
 #!/usr/bin/python3
@@ -21,7 +21,9 @@ main()
 SH
 chmod 755 "$R/usr/bin/$APP"
 install -m644 "packaging/$ID.desktop" "$R/usr/share/applications/"
-install -m644 "packaging/$ID.svg" "$R/usr/share/icons/hicolor/scalable/apps/"
+for n in 16 32 48 64 128 256 512; do
+  install -Dm644 "packaging/icons/$n.png" "$R/usr/share/icons/hicolor/${n}x${n}/apps/$ID.png"
+done
 install -m644 README.md LICENSE "$R/usr/share/doc/$APP/"
 
 find "$R" -type d -exec chmod 755 {} +
