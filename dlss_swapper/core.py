@@ -200,6 +200,16 @@ def _undo_hags(game: Game, notes: list) -> None:
     save_state(game.path, st)
 
 
+def _clear_indicators(game: Game, notes: list) -> None:
+    pfx = compat.prefix_dir(game)
+    if not pfx:
+        return
+    if wineprefix.prefix_busy():
+        notes.append("Wine запущен: индикатор DLSS-G в реестре не сброшен — повторите, когда игра закрыта")
+    elif wineprefix.clear_ngx_indicators(pfx):
+        notes.append("Индикатор DLSS / DLSS-G в углу экрана выключен (сброшен в реестре префикса)")
+
+
 def _uninstall_all(game: Game, cur: str, notes: list, keep_compat: bool = False) -> tuple[str, bool]:
     removed = False
     for inst in optiscaler.uninstall(game.path):
@@ -238,6 +248,7 @@ def remove_all_fg(game: Game, write: bool = True) -> LaunchUpdate | None:
     notes: list = []
     cur, removed = _uninstall_all(game, old, notes)
     _undo_hags(game, notes)
+    _clear_indicators(game, notes)
     if not removed:
         return None
     lu = _write_opts(game, old, cur, write)
@@ -273,6 +284,8 @@ def setup_fg(game: Game, target: Path, method: str, opti_opts: optiscaler.Instal
                                          "launch_undo": undo}}
         save_state(game.path, st)
         _setup_compat(game, {"nvcuda": dlssgopen.VARIANT, "nvapi64": dlssgopen.VARIANT}, notes)
+        if not dlssg_indicator:
+            _clear_indicators(game, notes)
         version = bundle.version
     elif method == "native":
         bundle = dlssg_bundle()

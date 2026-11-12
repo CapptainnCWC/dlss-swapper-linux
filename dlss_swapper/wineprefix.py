@@ -98,6 +98,20 @@ def delete_value(reg: Path, key: str, name: str) -> bool:
     return True
 
 
+# DXVK-NVAPI turns DXVK_NVAPI_SET_NGX_DEBUG_OPTIONS into these NGX registry values and they stay
+# after the variable is gone, so one launch with the indicator keeps it on for good.
+NGX_KEY = r"Software\\NVIDIA Corporation\\Global\\NGXCore"
+NGX_INDICATOR_VALUES = ("DLSSG_IndicatorText", "ShowDlssIndicator", "DLSSIndicator")
+
+
+def clear_ngx_indicators(pfx_dir: Path) -> bool:
+    """Remove NVIDIA's on-screen DLSS / DLSS-G indicator switches from pfx/system.reg."""
+    reg = Path(pfx_dir) / "pfx/system.reg"
+    if not reg.is_file():
+        return False
+    return any([delete_value(reg, NGX_KEY, v) for v in NGX_INDICATOR_VALUES])
+
+
 def hags_value(pfx_dir: Path) -> int | None:
     reg = Path(pfx_dir) / "pfx/system.reg"
     if not reg.is_file():
